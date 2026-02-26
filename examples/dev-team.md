@@ -1,376 +1,237 @@
-# Dev Team: Architect + Frontend + Backend + Testing Agents
+# Dev Team: Architect + Frontend + Backend + QA
 
-A software development team that designs and implements a feature in parallel. The architect runs first to define the contract that all other agents share. Frontend, backend, and testing agents then run in parallel against that contract.
+**AGENT TEAMS (requires flag)**
 
----
+This is a true Agent Teams example. It requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and Opus 4.6. Teammates run as peers with independent context windows, a shared task list, and direct lateral messaging. This is not the subagent pattern.
 
-## Team Structure
-
-```
-Phase 1 (Sequential):
-  Orchestrator provides feature spec
-      |
-      v
-  Agent 1: Architect
-      - Designs system architecture
-      - Defines API contracts
-      - Specifies data models
-      - Returns shared contract for all agents
-
-Phase 2 (Parallel, all receive architect output):
-  Agent 2: Frontend Developer
-      - Implements UI components
-      - Writes frontend code to shared contract
-  Agent 3: Backend Developer
-      - Implements API endpoints
-      - Implements business logic
-      - Writes to shared contract
-  Agent 4: Test Engineer
-      - Writes tests for all layers
-      - Uses contract to write accurate tests
-
-Phase 3 (Sequential):
-  Orchestrator
-      - Reviews all outputs
-      - Checks contract compliance
-      - Produces integration summary
-```
+If you want the subagent equivalent (Task tool, no flag needed), the structure is the same but teammates cannot message each other directly. See the note at the bottom.
 
 ---
 
-## Setup
+## The Team Prompt
+
+Paste this into Claude Code (Opus 4.6, flag enabled):
+
+```
+Create an agent team to build a user authentication system.
+
+Spawn four teammates:
+
+- "architect" to design the full technical spec: API endpoints, data models, auth flow, and file structure. Architect starts immediately. When the spec is complete, message frontend and backend simultaneously with the full spec document. Architect should NOT write any implementation code.
+
+- "frontend" to implement the React TypeScript components for auth: login form, registration form, password reset form, and session management. Frontend is blocked until architect sends the spec. If frontend finds an ambiguity in the spec, message architect directly to resolve it rather than guessing. Frontend should NOT implement API endpoints or database logic.
+
+- "backend" to implement the FastAPI Python endpoints and SQLAlchemy models. Backend is blocked until architect sends the spec. If backend finds a gap in the spec, message architect directly. Backend should NOT implement frontend components.
+
+- "qa" to write a comprehensive test suite covering all API endpoints and frontend components. QA is blocked until architect sends the spec (QA can write tests from the spec without waiting for implementation). When QA finds a test failure against the actual implementation, message backend or frontend directly with the specific failure and expected behavior.
+
+The feature requirements:
+- Email/password registration
+- JWT-based login (tokens expire in 1 hour)
+- Password reset via email
+- Session management: logout and token refresh
+- Tech stack: React TypeScript frontend, Python FastAPI backend, PostgreSQL database, bcrypt password hashing
+
+Coordinate the team. Tell me when all four teammates have marked their tasks complete.
+```
+
+---
+
+## Expected Team Structure
+
+When the team is running, the shared task list at `~/.claude/tasks/dev-team/` will look like this:
+
+```
+Task #1: Design auth system spec     [architect]   status: claimed
+Task #2: Implement frontend          [frontend]    status: blocked (by #1)
+Task #3: Implement backend           [backend]     status: blocked (by #1)
+Task #4: Write test suite            [qa]          status: blocked (by #1)
+```
+
+After architect completes:
+
+```
+Task #1: Design auth system spec     [architect]   status: complete
+Task #2: Implement frontend          [frontend]    status: claimed
+Task #3: Implement backend           [backend]     status: claimed
+Task #4: Write test suite            [qa]          status: claimed
+```
+
+All three unblocked tasks self-claim and run simultaneously. This is the fan-out from a single completed task.
+
+---
+
+## What the tmux Split-Pane View Looks Like
+
+When Agent Teams is running correctly, you see four active panes. Each pane is a separate Claude Code instance.
+
+```
++---------------------------+---------------------------+
+| PANE 1: team-lead         | PANE 2: architect         |
+|                           |                           |
+| Team created.             | Claiming Task #1...       |
+| Teammates spawned: 4      | Reading requirements...   |
+| Watching task list...     | Designing API endpoints:  |
+|                           | POST /auth/register       |
+|                           | POST /auth/login          |
+|                           | POST /auth/logout         |
+|                           | POST /auth/refresh        |
+|                           | POST /auth/password-reset |
+|                           |                           |
+|                           | Sending spec to frontend  |
+|                           | and backend...            |
++---------------------------+---------------------------+
+| PANE 3: frontend          | PANE 4: backend + QA      |
+|                           |                           |
+| Waiting for architect...  | backend: waiting...       |
+| @architect spec received  | qa: waiting...            |
+| Claiming Task #2...       |                           |
+| Building LoginForm.tsx... | @architect spec received  |
+|                           | backend: claiming Task #3 |
+|                           | qa: claiming Task #4      |
+|                           |                           |
+|                           | backend: implementing     |
+|                           | POST /auth/register...    |
+|                           |                           |
+|                           | qa: writing pytest for    |
+|                           | /auth/register...         |
++---------------------------+---------------------------+
+```
+
+Press `ctrl+t` to toggle a team status overlay showing all teammates and their current task.
+
+Navigate panes with `Shift+Up` and `Shift+Down`.
+
+---
+
+## How Lateral Messaging Flows in This Team
+
+### Architect to Frontend and Backend (Phase 1 handoff)
+
+When architect completes the spec, it sends a lateral message to both peers simultaneously. This is the key coordination event. The team lead does not need to relay the spec.
+
+Architect's outbound messages (you see these in architect's pane):
+
+```
+@frontend) Spec complete. Here is the full architecture document:
+
+API Endpoints:
+  POST /auth/register - body: {email, password} - returns: {token, user_id}
+  POST /auth/login - body: {email, password} - returns: {access_token, refresh_token}
+  POST /auth/logout - body: {} - requires: Authorization header
+  POST /auth/refresh - body: {refresh_token} - returns: {access_token}
+  POST /auth/password-reset - body: {email} - returns: {message}
+
+Components to build:
+  RegisterForm.tsx - fields: email, password, confirm_password
+  LoginForm.tsx - fields: email, password
+  PasswordResetForm.tsx - fields: email
+  SessionManager.tsx - handles: token storage, refresh logic, logout
+
+Task #1 marked complete. Your Task #2 is now unblocked.
+```
+
+```
+@backend) Spec complete. Same architecture document as I sent frontend:
+[same spec content]
+Task #1 marked complete. Your Task #3 is now unblocked.
+```
+
+### QA to Backend (test failures)
+
+When QA runs tests against backend's actual implementation and finds failures, it messages backend directly. The team lead does not mediate.
+
+QA's outbound message (you see this in QA's pane):
+
+```
+@backend) Test failure on POST /auth/register:
+
+Expected: 409 Conflict when email already exists
+Got: 500 Internal Server Error
+
+Test: test_register_duplicate_email
+File: /tmp/dev-team/tests/test_auth.py line 47
+
+The endpoint is not catching the IntegrityError from PostgreSQL. You need a try/except around the INSERT and return a proper 409 response. I cannot mark my task complete until this passes.
+```
+
+Backend receives this in its pane, fixes the issue, and replies:
+
+```
+@qa) Fixed. Added IntegrityError handling with 409 response. Re-run your test against the updated endpoint at /auth/register.
+```
+
+### Frontend to Architect (spec ambiguity)
+
+If frontend encounters an ambiguity in the spec, it messages architect directly:
+
+```
+@architect) Spec question: the auth flow shows token storage but does not specify where. LocalStorage has XSS exposure risk; httpOnly cookies require server changes. Which do you want for the access_token? This blocks my SessionManager implementation.
+```
+
+Architect replies:
+
+```
+@frontend) Use httpOnly cookies for access_token. I will add a Set-Cookie header to the login endpoint response in the spec. Backend will need to handle this too — I am messaging them now.
+```
+
+---
+
+## When It Is Working vs. Not Working
+
+**Working correctly:**
+- Four panes active simultaneously after architect completes Task #1
+- You see `@frontend` and `@backend` appear in architect's pane output
+- The task list updates without you doing anything
+- QA's failing test messages appear in backend's pane, not in the team lead pane
+
+**Not working (flag not set or misconfigured):**
+- Only one pane active at a time
+- No `@teammate` messages visible anywhere
+- Task list does not update automatically
+- You have to manually hand off the architect's spec to frontend and backend
+
+---
+
+## Output Location
+
+Write files to `/tmp/dev-team/` before spawning the team. Each teammate writes to their own subdirectory:
 
 ```bash
-# Create shared output directory before spawning agents
-mkdir -p /tmp/dev-team/
 mkdir -p /tmp/dev-team/frontend/
 mkdir -p /tmp/dev-team/backend/
 mkdir -p /tmp/dev-team/tests/
+mkdir -p /tmp/dev-team/spec/
 ```
+
+Architect writes the spec to `/tmp/dev-team/spec/auth-spec.json` and includes the path in its lateral messages. Teammates read from that file rather than receiving the full spec inline.
 
 ---
 
-## Feature Spec (Input to Orchestrator)
+## Adapting This for Other Features
 
-```json
-{
-  "feature": "User authentication system",
-  "requirements": [
-    "Email/password registration",
-    "JWT-based login",
-    "Password reset via email",
-    "Session management (logout, token refresh)"
-  ],
-  "tech_stack": {
-    "frontend": "React with TypeScript",
-    "backend": "Python FastAPI",
-    "database": "PostgreSQL",
-    "auth": "JWT tokens"
-  },
-  "constraints": [
-    "Passwords must be bcrypt hashed",
-    "JWT tokens expire in 1 hour",
-    "Refresh tokens expire in 30 days"
-  ]
-}
-```
+The structure works for any feature build. To adapt:
+
+1. Replace the authentication requirements with your feature requirements
+2. Keep the four roles (architect, frontend, backend, qa) or adjust names for your stack
+3. Keep the lateral message triggers: architect to frontend+backend when spec done, QA to relevant implementer when tests fail
+4. Add a fifth "devops" teammate if the feature requires infrastructure changes (blocked by backend)
+
+The architect-first sequencing is intentional and should not be removed. Without a shared spec from architect, frontend and backend make incompatible assumptions and produce work that cannot be integrated.
 
 ---
 
-## Phase 1: Task Call - Architect Agent
+## Subagent Equivalent (no flag needed)
 
-```
-description: "Architect agent - design authentication system"
+**SUBAGENTS (no flag needed)**
 
-prompt: |
-  You are a Software Architect agent.
+If you cannot use the Agent Teams flag, you can approximate this with the Task tool. The structure is the same but lateral messaging is replaced by the orchestrator relaying messages manually.
 
-  ## Your Job
-  Design the technical architecture for a user authentication system. Produce a complete, unambiguous contract that frontend, backend, and test engineers can implement independently without further clarification.
+The orchestrator pattern:
 
-  ## Feature Spec
-  {
-    "feature": "User authentication system",
-    "requirements": ["Email/password registration", "JWT-based login", "Password reset via email", "Session management (logout, token refresh)"],
-    "tech_stack": {"frontend": "React with TypeScript", "backend": "Python FastAPI", "database": "PostgreSQL", "auth": "JWT tokens"},
-    "constraints": ["Passwords must be bcrypt hashed", "JWT tokens expire in 1 hour", "Refresh tokens expire in 30 days"]
-  }
+1. Spawn architect as a subagent. Wait for it to return the spec.
+2. Read the spec. Pass it explicitly to frontend, backend, and QA as parallel subagents.
+3. Collect all three outputs. Check for failures.
+4. If QA reports failures, spawn a new backend subagent with the failure details.
 
-  ## Architecture Output Requirements
-  Design must include:
-  1. All API endpoints (method, path, request body, response body, error codes)
-  2. Data models (all fields, types, constraints)
-  3. Frontend component list (component name, props, responsibilities)
-  4. Authentication flow diagram (as numbered steps)
-  5. File structure for both frontend and backend
-
-  ## Tools You May Use
-  None needed - use your knowledge to design.
-
-  ## Output Requirements
-  Return ONLY a JSON object:
-  {
-    "status": "complete",
-    "agent": "architect",
-    "result": {
-      "api_endpoints": [
-        {
-          "method": "POST|GET|PUT|DELETE",
-          "path": "string",
-          "description": "string",
-          "request_body": {"field": "type and description"},
-          "response_success": {"status_code": number, "body": {}},
-          "response_errors": [{"status_code": number, "condition": "string"}]
-        }
-      ],
-      "data_models": [
-        {
-          "model": "string",
-          "fields": [{"name": "string", "type": "string", "constraints": "string"}]
-        }
-      ],
-      "frontend_components": [
-        {
-          "component": "string",
-          "file_path": "string",
-          "props": ["string"],
-          "responsibilities": ["string"]
-        }
-      ],
-      "auth_flow": [
-        {"step": number, "actor": "frontend|backend|database", "action": "string"}
-      ],
-      "file_structure": {
-        "frontend": ["string file paths"],
-        "backend": ["string file paths"]
-      },
-      "security_notes": ["string"]
-    }
-  }
-  Do not return markdown. Do not add explanation. Return the JSON only.
-```
-
----
-
-## Phase 2: Task Call - Frontend Agent (receives architect output)
-
-```
-description: "Frontend developer - implement authentication UI"
-
-prompt: |
-  You are a Frontend Developer agent. You write React with TypeScript.
-
-  ## Your Job
-  Implement the frontend components for the user authentication system according to the architecture contract provided. Write complete, production-quality code.
-
-  ## Architecture Contract
-  [INSERT architect_output["result"] as JSON here]
-
-  ## Your Scope
-  Implement only frontend components. Do not implement API endpoints. Do not implement database logic.
-
-  ## Output Location
-  Write each component file to: /tmp/dev-team/frontend/
-  File naming: use the file_path values from the architecture contract.
-
-  ## Implementation Requirements
-  - TypeScript with proper type definitions
-  - Form validation on the client side before submitting
-  - Error state handling (display API errors to user)
-  - Loading states during API calls
-  - Use fetch() for API calls (no extra libraries)
-  - Each component in its own file
-
-  ## Tools You May Use
-  Write (to create files at /tmp/dev-team/frontend/)
-
-  ## Output Requirements
-  Return ONLY a JSON object:
-  {
-    "status": "complete",
-    "agent": "frontend-developer",
-    "result": {
-      "files_created": [
-        {"file_path": "string", "component": "string", "lines": number}
-      ],
-      "assumptions_made": ["string"],
-      "deviations_from_contract": ["string or empty array"],
-      "dependencies_required": ["npm package names"]
-    }
-  }
-  Do not return markdown. Do not add explanation. Return the JSON only.
-```
-
----
-
-## Phase 2: Task Call - Backend Agent (receives architect output)
-
-```
-description: "Backend developer - implement authentication API"
-
-prompt: |
-  You are a Backend Developer agent. You write Python with FastAPI.
-
-  ## Your Job
-  Implement the backend API endpoints for the user authentication system according to the architecture contract provided. Write complete, production-quality code.
-
-  ## Architecture Contract
-  [INSERT architect_output["result"] as JSON here]
-
-  ## Your Scope
-  Implement only API endpoints and business logic. Do not implement frontend components. Implement the database models as SQLAlchemy models.
-
-  ## Output Location
-  Write each file to: /tmp/dev-team/backend/
-  File naming: use the file_path values from the architecture contract.
-
-  ## Implementation Requirements
-  - FastAPI with Pydantic v2 for request/response models
-  - SQLAlchemy for database models
-  - bcrypt for password hashing
-  - python-jose for JWT operations
-  - Proper HTTP status codes for all responses
-  - Input validation on all endpoints
-  - Each router in its own file
-
-  ## Tools You May Use
-  Write (to create files at /tmp/dev-team/backend/)
-
-  ## Output Requirements
-  Return ONLY a JSON object:
-  {
-    "status": "complete",
-    "agent": "backend-developer",
-    "result": {
-      "files_created": [
-        {"file_path": "string", "description": "string", "lines": number}
-      ],
-      "endpoints_implemented": ["METHOD /path", ...],
-      "assumptions_made": ["string"],
-      "deviations_from_contract": ["string or empty array"],
-      "dependencies_required": ["pip package names"],
-      "environment_variables_required": ["string"]
-    }
-  }
-  Do not return markdown. Do not add explanation. Return the JSON only.
-```
-
----
-
-## Phase 2: Task Call - Test Agent (receives architect output)
-
-```
-description: "Test engineer - write tests for authentication system"
-
-prompt: |
-  You are a Test Engineer agent.
-
-  ## Your Job
-  Write a comprehensive test suite for the user authentication system. Use the architecture contract to write tests that validate every endpoint, component behavior, and edge case. Tests are written before the implementation is complete (test-driven approach).
-
-  ## Architecture Contract
-  [INSERT architect_output["result"] as JSON here]
-
-  ## Your Scope
-  Write both backend API tests (pytest) and frontend component tests (React Testing Library + Jest). Cover happy paths and all specified error conditions.
-
-  ## Output Location
-  Write test files to: /tmp/dev-team/tests/
-  Backend tests: /tmp/dev-team/tests/backend/
-  Frontend tests: /tmp/dev-team/tests/frontend/
-
-  ## Test Requirements
-  Backend (pytest):
-  - Test every API endpoint
-  - Test every error condition from the contract
-  - Test authentication flow end-to-end
-  - Include fixtures for database setup/teardown
-
-  Frontend (Jest + React Testing Library):
-  - Test form validation behavior
-  - Test successful form submission
-  - Test error state display
-  - Test loading state display
-
-  ## Tools You May Use
-  Write (to create files at /tmp/dev-team/tests/)
-
-  ## Output Requirements
-  Return ONLY a JSON object:
-  {
-    "status": "complete",
-    "agent": "test-engineer",
-    "result": {
-      "files_created": [
-        {"file_path": "string", "test_count": number, "coverage_area": "string"}
-      ],
-      "total_tests": number,
-      "endpoints_covered": ["string"],
-      "edge_cases_covered": ["string"],
-      "missing_coverage": ["string or empty array"]
-    }
-  }
-  Do not return markdown. Do not add explanation. Return the JSON only.
-```
-
----
-
-## Phase 3: Integration Review
-
-After all Phase 2 agents complete, orchestrator performs integration review:
-
-```python
-import json
-
-architect = json.loads(architect_result)["result"]
-frontend = json.loads(frontend_result)["result"]
-backend = json.loads(backend_result)["result"]
-tests = json.loads(tests_result)["result"]
-
-# Check for contract compliance
-deviations = []
-if frontend.get("deviations_from_contract"):
-    deviations.extend([f"Frontend: {d}" for d in frontend["deviations_from_contract"]])
-if backend.get("deviations_from_contract"):
-    deviations.extend([f"Backend: {d}" for d in backend["deviations_from_contract"]])
-
-# Check that all endpoints have tests
-endpoints_designed = [ep["path"] for ep in architect["api_endpoints"]]
-endpoints_implemented = backend.get("endpoints_implemented", [])
-endpoints_tested = tests.get("endpoints_covered", [])
-
-missing_implementation = [ep for ep in endpoints_designed if not any(ep in impl for impl in endpoints_implemented)]
-missing_tests = [ep for ep in endpoints_designed if not any(ep in t for t in endpoints_tested)]
-
-# Produce integration summary
-summary = {
-    "status": "complete",
-    "files_created": {
-        "frontend": [f["file_path"] for f in frontend["files_created"]],
-        "backend": [f["file_path"] for f in backend["files_created"]],
-        "tests": [f["file_path"] for f in tests["files_created"]]
-    },
-    "total_files": len(frontend["files_created"]) + len(backend["files_created"]) + len(tests["files_created"]),
-    "total_tests": tests["total_tests"],
-    "contract_deviations": deviations,
-    "missing_implementation": missing_implementation,
-    "missing_tests": missing_tests,
-    "combined_dependencies": {
-        "npm": list(set(frontend.get("dependencies_required", []))),
-        "pip": list(set(backend.get("dependencies_required", []))),
-        "env_vars": list(set(backend.get("environment_variables_required", [])))
-    }
-}
-
-print(json.dumps(summary, indent=2))
-```
-
----
-
-## Notes for Adapting This Template
-
-- The architect phase is ALWAYS sequential. The contract it produces is the single source of truth for all parallel agents.
-- Frontend and backend agents must receive the exact same architect output. Copy it into both prompts verbatim.
-- If a parallel agent deviates from the contract, flag it but do not re-run the agent unless the deviation is critical.
-- The test agent can run in parallel with frontend and backend because it works from the contract, not from the implementation.
-- For larger features, split frontend into multiple agents (e.g., one agent per major component).
+The key limitation: you (the orchestrator) must relay all coordination. This adds latency and can introduce information loss if you summarize rather than pass the full output.

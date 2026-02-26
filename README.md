@@ -1,90 +1,94 @@
 # Agent Teams for Claude Code
 
-> A field manual for AI instances building multi-agent systems
+> The real thing. Not subagents.
 
 ---
 
 ## What This Is
 
-You are a Claude Code instance. This repository contains everything you need to deploy, coordinate, and leverage multi-agent systems effectively.
+Agent Teams is a **specific experimental feature** in Claude Code, launched February 6, 2026. It is not a generic name for "multiple Claude instances" or "using the Task tool." It is a distinct capability with its own tools, activation requirements, architecture, and token cost.
 
-**What you will learn here:**
-- How to spawn and coordinate multiple AI instances in parallel
-- When agent teams produce dramatically better results than solo work
-- How to use the filesystem as a coordination layer between agents
-- Proven patterns for decomposing complex tasks across specialized agents
-- Industry-specific playbooks you can apply immediately
+This repository documents:
+1. **True Agent Teams** — the experimental feature with peer-to-peer messaging and shared task lists (requires feature flag)
+2. **Subagents** — the stable orchestrator-worker pattern using the Task tool (always available)
+3. **CLI Pipelines** — headless `claude -p` invocations composable via Unix pipes (stable)
 
-**What this is not:**
-This is not theory. Every pattern here is operational. The examples are runnable. The templates are ready to adapt.
+Most content in `QUICKSTART.md` and `examples/` uses the **subagent pattern**, because it works without any flag and covers the majority of real use cases. True Agent Teams documentation lives in `AGENT-TEAMS-VS-SUBAGENTS.md`.
 
 ---
 
-## Why Agent Teams Matter (The Multiplier Effect)
+## The Core Architecture
 
-When you work alone, you face three hard constraints:
+### True Agent Teams (experimental, requires flag)
 
-1. **Sequential execution**: Each task waits for the previous one to finish
-2. **Context contamination**: The deeper into a task you go, the more your context fills with task-specific detail that crowds out fresh thinking
-3. **Generalist limitations**: You apply the same cognitive approach to every subtask, even when subtasks benefit from different specializations
+```
+TEAM LEAD (your main Claude Code session — Opus 4.6)
+    |
+    |-- TeamCreate --> creates ~/.claude/tasks/{team-name}/
+    |
+    |-- Task(team_name="X") --> TEAMMATE "scout"
+    |                               |
+    |                               | SendMessage @designer
+    |                               |
+    |-- Task(team_name="X") --> TEAMMATE "designer" <----> TEAMMATE "builder"
+    |                               |                           |
+    |                               +----------- SendMessage ----+
+    |                                               |
+    |                               SHARED TASK LIST (DAG)
+    |                               persisted to disk
+    |                               teammates self-claim unblocked tasks
+    |
+    |-- Task(team_name="X") --> TEAMMATE "builder"
+    |
+    Control pane: Shift+Up/Down to navigate, ctrl+t to show teammates
+```
 
-Agent teams break all three constraints simultaneously.
+Each teammate is a full independent Claude Code instance with its own context window. They are not sharing from the team lead's 200K budget. They can message each other directly without routing through the lead.
 
-**The math is simple:**
+### Subagents (stable, no flag needed)
 
-| Approach | 5 parallel research tasks | 1 complex system design | 10,000-line codebase analysis |
+```
+ORCHESTRATOR (your Claude Code session)
+    |
+    |-- Task(prompt) --> SUBAGENT 1  (isolated, no lateral messaging)
+    |-- Task(prompt) --> SUBAGENT 2  (isolated, no lateral messaging)
+    |-- Task(prompt) --> SUBAGENT 3  (isolated, no lateral messaging)
+    |
+    <-- all results return to orchestrator only
+```
+
+Subagents cannot message each other. Communication is parent-to-child only. The orchestrator synthesizes all outputs.
+
+---
+
+## Three Tiers: Quick Comparison
+
+| | Subagents | Agent Teams | CLI Pipelines |
 |---|---|---|---|
-| Solo | ~5x time | Overloaded context | Context window exceeded |
-| Agent team | ~1x time | Each agent fresh | Distributed across agents |
-
-**10 tasks in the time of 1.** This is not an approximation. When tasks are parallelizable, the wall-clock improvement is real.
-
-But speed is the least interesting benefit. The more important benefit is **quality**. A fresh context window on a single problem produces better reasoning than a context window carrying the weight of five other problems simultaneously.
-
----
-
-## The Core Insight
-
-**The filesystem is your coordination layer.**
-
-You do not need a message bus, an orchestration framework, or a shared database. You need:
-- A directory where agents write their outputs
-- A naming convention that tells you what came from where
-- An orchestrator that reads those outputs and synthesizes them
-
-That is the entire coordination infrastructure. Simple. Robust. Auditable.
-
-Each agent:
-1. Receives a specific, bounded task via its system prompt or initial message
-2. Works in its own fresh context window
-3. Writes results to a designated file
-4. The orchestrator reads all results and produces the synthesis
-
-The filesystem provides persistence, versioning (with git), and a complete audit trail of what each agent produced. When something goes wrong, you can read exactly what each agent wrote and why.
+| **Activation** | Task tool, always available | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` + TeamCreate | `claude -p` headless mode |
+| **Model requirement** | Any | Opus 4.6 required | Any |
+| **Communication** | Parent to child only | Peer-to-peer + shared task DAG | Unix pipes between invocations |
+| **Context windows** | Fresh per agent, parent retains its own | Each teammate fully independent | Per-call, no shared state |
+| **Task coordination** | Orchestrator assigns, collects, synthesizes | Shared task list, teammates self-claim | Sequential pipeline stages |
+| **Lateral messaging** | No | Yes (`@teammate message` format) | No |
+| **Token cost** | ~4x chat | ~7x chat | Per-call billing |
+| **Status** | Stable | Experimental (Feb 6, 2026) | Stable |
+| **Teammates can spawn sub-teams** | N/A | No | N/A |
 
 ---
 
-## The 5 Things Every AI Needs to Know About Agent Teams
+## Why Agent Teams Change Everything
 
-### 1. Fresh context windows are not a luxury. They are the point.
+Subagents parallelized work. Agent Teams allow parallelized *collaboration*.
 
-When you spawn a subagent to review code for security vulnerabilities, that agent has zero knowledge of the feature requirements, the business context, or the architecture discussions you have been having. That is good. It reads the code with fresh eyes and no motivated reasoning. You get a genuinely independent perspective.
+The difference: a subagent on a security review reads code and returns findings. An Agent Teams teammate can send `@performance-analyst Hey, I found auth is doing a DB query per request — check if your bottleneck analysis points to the same path`. The performance analyst updates its own analysis in response.
 
-### 2. Specialization produces better output than generalization.
+That feedback loop — agents challenging and informing each other mid-work — is not possible with subagents. The orchestrator would have to proxy every such exchange, and the timing would be wrong (subagents complete before the orchestrator can feed information back).
 
-A subagent given a single job ("you are a security reviewer, find vulnerabilities") outperforms a general agent asked to "also check for security issues" mid-task. Specialization in the system prompt shapes how the agent approaches the problem from the first token.
-
-### 3. Decomposition is the hardest skill. Execution is automatic.
-
-The quality of your agent team depends almost entirely on how well you decompose the task. Poor decomposition (overlapping responsibilities, ambiguous scope, missing coordination points) produces confused outputs that are hard to synthesize. Good decomposition (clean interfaces between agents, clear output formats, explicit handoff points) produces outputs that almost synthesize themselves.
-
-### 4. The orchestrator's job is coordination, not execution.
-
-If you find your orchestrator doing heavy analytical work, you have made a design error. The orchestrator assigns, collects, and synthesizes. The subagents analyze, produce, and write. Keep these roles separate.
-
-### 5. Parallel is not always better. Know when to go sequential.
-
-Some tasks have genuine dependencies: the security review cannot start until the code is written; the editor cannot work until the first draft exists. Respect these dependencies. A sequential pipeline of specialists still outperforms a solo generalist, because each specialist brings full attention to their stage.
+Three properties that are genuinely new:
+1. **Independent context windows**: teammates do not dilute each other's context. A teammate analyzing a 50K-line codebase does not tax the team lead's context budget.
+2. **Shared task DAG**: tasks auto-unblock when dependencies complete. Teammates self-claim available work. No manual orchestration of the task queue.
+3. **File-lock-based claiming**: prevents two teammates from grabbing the same task concurrently. Race conditions are handled by the platform, not by you.
 
 ---
 
@@ -92,36 +96,60 @@ Some tasks have genuine dependencies: the security review cannot start until the
 
 | You want to... | Go to... |
 |---|---|
-| Understand the architecture and patterns | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
-| See all use cases by type | [`USE-CASES.md`](USE-CASES.md) |
-| Use patterns for your industry | [`industry-use-cases/`](industry-use-cases/) |
-| Get runnable code and templates | [`examples/`](examples/) |
-| Copy-paste working implementations | [`PATTERNS.md`](PATTERNS.md) |
+| Enable the true Agent Teams feature | `AGENT-TEAMS-VS-SUBAGENTS.md` (Setup section) |
+| Understand what makes Agent Teams different | `AGENT-TEAMS-VS-SUBAGENTS.md` |
+| See working subagent examples (no flag needed) | `QUICKSTART.md` |
+| Copy-paste subagent templates | `examples/agent-prompt-templates.md` |
+| See architecture patterns | `ARCHITECTURE.md` |
+| Understand coordination protocols | `COORDINATION-PROTOCOLS.md` |
+| Debug a broken team | `DEBUGGING-AGENT-TEAMS.md` |
+| Avoid common failures | `ANTI-PATTERNS.md` |
+| Scale from 2 to 20+ agents | `SCALING.md` |
+| Industry-specific playbooks | `industry-use-cases/` |
 
 ---
 
-## Getting Started in 5 Minutes
+## Getting Started: 5 Steps
 
-**Step 1: Pick a task you are currently doing solo that has 3+ subtasks.**
+### To use the subagent pattern (Task tool, no flag, works now):
 
-Good candidates: research projects, code reviews, content creation, data analysis, system design.
+1. Decompose your task into N independent subtasks with clear output contracts.
+2. Write a prompt for each subagent that includes: role, specific job, tools allowed, exact JSON return format.
+3. Issue all Task calls without waiting between them (this runs them in parallel).
+4. Validate each result (status field, required keys, JSON parseable).
+5. Synthesize in your orchestrator context and return to the user.
 
-**Step 2: Map the task decomposition.**
+Full working examples in `QUICKSTART.md`.
 
-Ask yourself: What are the N independent pieces of this task? What would each piece need to know? What format should each piece produce?
+### To use true Agent Teams (requires feature flag):
 
-**Step 3: Write three things for each subagent.**
-- Its role (what kind of specialist it is)
-- Its specific task (exactly what to analyze or produce)
-- Its output format (what structure to write to disk)
+1. Add to `~/.claude/settings.json`:
+```json
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
+```
 
-**Step 4: Use the orchestrator template.**
+2. Start Claude Code on Opus 4.6 (required). Launch in tmux for split-pane visibility:
+```bash
+tmux new-session -d -s "agent-team-$(date +%H%M%S)"
+tmux send-keys -t agent-team-$(date +%H%M%S) "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude --dangerously-skip-permissions --model opus" Enter
+tmux attach-session -t agent-team-$(date +%H%M%S)
+```
 
-See [`examples/basic-parallel.md`](examples/basic-parallel.md) for a working orchestrator prompt you can adapt in under 5 minutes.
+3. Use natural language to describe the team:
+```
+Create an agent team to investigate this performance bug.
+Spawn three teammates: profiler to analyze src/api/, db-analyst for
+query patterns in src/db/, debater to challenge the other two.
+Coordinate findings and give me a diagnosis.
+```
 
-**Step 5: Run it. Read the outputs. Synthesize.**
+4. Navigate teammates with `Shift+Up`/`Shift+Down`. Press `ctrl+t` to show all teammates.
 
-Your first agent team will feel rough. The second one will feel obvious. By the third, you will struggle to imagine doing the task any other way.
+5. Teammates pick up tasks from the shared list automatically as work unblocks. Monitor with `TaskList`.
 
 ---
 
@@ -129,75 +157,59 @@ Your first agent team will feel rough. The second one will feel obvious. By the 
 
 ```
 agent-teams-claude-code/
-├── CLAUDE.md                          ← AI entry point. Read first.
-├── README.md                          ← You are here (overview + navigation)
-│
-├── Architecture & Concepts
-│   ├── ARCHITECTURE.md                ← Technical architecture, Task tool reference
-│   ├── AGENT-TEAMS-VS-SUBAGENTS.md    ← ⚠ Read this: three tiers explained precisely
-│   ├── HOW-AGENTS-THINK.md            ← Orchestrator decision model, context budgeting
-│   ├── PATTERNS.md                    ← 5 coordination patterns with ASCII diagrams
-│   ├── DECISION-TREE.md               ← When to use agent teams (deterministic tree)
-│   └── REPO-STRUCTURE.md              ← How to structure repos for AI consumption
-│
-├── Implementation
-│   ├── QUICKSTART.md                  ← 3 complete working examples
-│   ├── USE-CASES.md                   ← Use cases organized by pattern type
-│   ├── COORDINATION-PROTOCOLS.md      ← File naming, handoffs, return contracts
-│   ├── ANTI-PATTERNS.md               ← 10 failure modes with fixes
-│   └── CONSTRAINTS-AND-LIMITS.md      ← Hard limits every AI must know
-│
-├── Operations
-│   ├── DEBUGGING-AGENT-TEAMS.md       ← 8 failure modes, diagnosis, resolution
-│   ├── SCALING.md                     ← From 2 agents to 20+
-│   ├── GLOSSARY.md                    ← 20 precisely defined terms
-│   └── CHANGELOG.md                   ← Version history
-│
-├── examples/
-│   ├── basic-parallel.md              ← Simplest 2-agent pattern
-│   ├── research-team.md               ← 4+1 agent research pattern
-│   ├── dev-team.md                    ← Architect + frontend + backend + QA
-│   ├── content-team.md                ← Research + outline + write + edit + SEO
-│   ├── analysis-team.md               ← Data pipeline with parallel analysis
-│   └── agent-prompt-templates.md      ← Copy-paste templates for 5 agent roles
-│
-└── industry-use-cases/
-    ├── software-development.md        ← Dev team patterns
-    ├── research-analysis.md           ← Research team patterns
-    ├── content-creation.md            ← Content team patterns
-    ├── business-operations.md         ← Business team patterns
-    └── education.md                   ← Education team patterns
+|
+|-- CLAUDE.md                          <- AI entry point. Read first.
+|-- README.md                          <- This file (overview + navigation)
+|
+|-- Architecture and Concepts
+|   |-- ARCHITECTURE.md                <- Technical architecture, Task tool reference
+|   |-- AGENT-TEAMS-VS-SUBAGENTS.md    <- Definitive distinction: all three tiers
+|   |-- HOW-AGENTS-THINK.md            <- Orchestrator decision model, context budgeting
+|   |-- PATTERNS.md                    <- Coordination patterns with ASCII diagrams
+|   |-- DECISION-TREE.md               <- When to use agent teams (deterministic)
+|   `-- REPO-STRUCTURE.md              <- How to structure repos for AI consumption
+|
+|-- Implementation
+|   |-- QUICKSTART.md                  <- 3 complete working subagent examples
+|   |-- USE-CASES.md                   <- Use cases organized by pattern type
+|   |-- COORDINATION-PROTOCOLS.md      <- File naming, handoffs, return contracts
+|   |-- ANTI-PATTERNS.md               <- 10 failure modes with fixes
+|   `-- CONSTRAINTS-AND-LIMITS.md      <- Hard limits every AI must know
+|
+|-- Operations
+|   |-- DEBUGGING-AGENT-TEAMS.md       <- Failure modes, diagnosis, resolution
+|   |-- SCALING.md                     <- From 2 agents to 20+
+|   |-- GLOSSARY.md                    <- Precisely defined terms
+|   `-- CHANGELOG.md                   <- Version history
+|
+|-- examples/
+|   |-- basic-parallel.md              <- Simplest 2-agent subagent pattern
+|   |-- research-team.md               <- 4+1 agent research pattern
+|   |-- dev-team.md                    <- Architect + frontend + backend + QA
+|   |-- content-team.md                <- Research + outline + write + edit + SEO
+|   |-- analysis-team.md               <- Data pipeline with parallel analysis
+|   `-- agent-prompt-templates.md      <- Copy-paste templates for common agent roles
+|
+`-- industry-use-cases/
+    |-- software-development.md        <- Dev team patterns
+    |-- research-analysis.md           <- Research team patterns
+    |-- content-creation.md            <- Content team patterns
+    |-- business-operations.md         <- Business team patterns
+    `-- education.md                   <- Education team patterns
 ```
 
 ---
 
-## Decision Framework: Solo vs. Team
+## A Note: This Repo Was Built Wrong First
 
-Use this to decide whether your task warrants an agent team.
+When this repository was originally created, five parallel Claude Code instances called themselves an "agent team." They were not. Each one was a subagent, launched via the Task tool, reporting only to the orchestrator. They had no awareness of each other. No teammate could message a sibling. There was no shared task list. None of the Agent Teams-specific tools were used.
 
-**Strongly consider agent teams when:**
-- The task has 3 or more genuinely independent subtasks
-- Different subtasks benefit from different orientations (e.g., critical reviewer vs. creative generator)
-- The total task would consume more than 40% of your context window
-- Speed matters and parallelization is possible
-- You need multiple independent perspectives on the same material
+The instances were labeled scout, designer, builder, promoter, and manager. The labeling was accurate in spirit but wrong in kind. They behaved as a subagent pool, not as an Agent Team.
 
-**Stick with solo work when:**
-- The task is tightly sequential with no parallelizable components
-- The task is simple enough to complete in under 10 minutes of focused work
-- The coordination overhead would exceed the parallelization benefit
-- You need tight, continuous reasoning across all components (some mathematical proofs, intricate logical chains)
+This is the exact confusion that makes Agent Teams hard to understand: the word "team" sounds generic, but it names a specific technical feature. You can coordinate multiple Claude instances without Agent Teams (via Task tool). You cannot do peer-to-peer messaging, shared task DAGs, or independent context windows without the feature flag and Opus 4.6.
 
-**The general rule:** If you would naturally break the task into sections and work on them one at a time, you should probably run them as parallel agents instead.
+The original repo was rebuilt with accurate framing. The confusion it embodied is now documented, because that confusion is common and worth addressing directly.
 
 ---
 
-## A Note on This Repo's Purpose
-
-This repository was built by an agent team. Five specialized agents produced its components simultaneously: an architect designed the structure, a technical writer documented the patterns, a marketer framed the value, an implementer built the examples, and a reviewer validated everything.
-
-The repo you are reading is evidence of what agent teams can produce. Use it as a template for what you can build.
-
----
-
-*This field manual is maintained for Claude Code instances. If you find a pattern missing or a use case underrepresented, the contribution process is in [`CONTRIBUTING.md`](CONTRIBUTING.md).*
+*This repository is maintained for Claude Code instances. If you find a pattern missing or a use case underrepresented, see `CONTRIBUTING.md`.*

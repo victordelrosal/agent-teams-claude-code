@@ -6,6 +6,43 @@ Format: each entry includes the date, version, type of change, and a description
 
 ---
 
+## [2.0.0] - 2026-02-26
+
+### Major Correction: Three-Tier Framing and Agent Teams Accuracy
+
+The original repository (v1.0.0) described its own 5-subagent build process as an "agent team." This was incorrect. The original build used the Task tool (parent-to-child, no lateral messaging, no shared task list) — which is the Subagents pattern (Tier 1), not true Agent Teams (Tier 2).
+
+This release corrects the framing across all core documents.
+
+---
+
+**change** `README.md`
+Complete rewrite. Opens with "The real thing. Not subagents." Adds ASCII architecture diagrams for both tiers, full 3-tier comparison table, honest "Built Wrong First" section explaining the original confusion.
+
+**change** `CLAUDE.md`
+Complete rewrite. Three-tier disambiguation placed at the top. Separate Quick Start sections for Tier 1 (subagents, no flag) and Tier 2 (Agent Teams, flag + Opus 4.6 required). All 7 Agent Teams tools documented. Teammate prompt template added. 6 rules per tier.
+
+**change** `ARCHITECTURE.md`
+Rewritten to distinguish all three tiers accurately. Subagent constraints documented (no lateral messaging, no sub-spawning, shared parent context budget). Agent Teams mechanics documented (independent context windows, shared task DAG, mailbox messaging).
+
+**change** `QUICKSTART.md`
+Rewritten with three examples, one per tier. Each example clearly labeled with its tier, activation requirements, and cost. Subagent example uses JSON return contracts. Agent Teams example uses TeamCreate + SendMessage pattern.
+
+**add** `AGENT-TEAMS-VS-SUBAGENTS.md`
+New file. Definitive three-tier comparison. Setup instructions for enabling the experimental feature. Display modes (in-process vs split-pane tmux). Known limitations of Agent Teams as of February 2026.
+
+**add** `PROMPTING-AGENT-TEAMS.md`
+New file. Practical prompting guide for true Agent Teams. Includes setup confirmation steps, teammate briefing requirements, lateral messaging format, copy-paste team prompt templates for 3 common team shapes.
+
+**change** `examples/dev-team.md`
+Rewritten as a true Agent Teams example with lateral messaging. Includes the full team spawn prompt with direct teammate-to-teammate coordination instructions.
+
+---
+
+**note** v2.0.0 was produced by a correction pass using 3 parallel subagents (one for core docs, one for technical docs, one for examples) coordinated by the orchestrator. The repo itself now accurately demonstrates the difference it documents.
+
+---
+
 ## [1.0.0] - 2026-02-26
 
 ### Initial Release: Claude Code Agent Teams Reference Repository
