@@ -1,416 +1,473 @@
-# How Orchestrating Agents Think About Parallel Work
+# How Agents Think About Multi-Agent Work
 
-## 1. The Orchestrator Mental Model
+This file covers decision-making at two levels: the team lead deciding when and how to use agents, and the internal mechanics that govern how agents (both subagents and teammates) behave once spawned.
 
-When a Claude Code instance running as an orchestrator evaluates a task, it applies a structured decomposition process before deciding on execution strategy.
+---
 
-The core question: **"Which parts of this task are independent of each other?"**
+## 1. Team Lead Decision Model
 
-Independent = no shared mutable state, no sequential dependency, no same-file edits required.
+The team lead (your main session) makes a series of decisions before spawning anything. The core question is: "What tier is appropriate for this task, and how should work be divided?"
 
-The orchestrator's decision chain:
+### The Decision Chain
 
 ```
-Is the task trivially small?
-  YES --> Execute in main conversation, no agents.
+Is the task trivially small (under ~30 seconds, no isolation benefit)?
+  YES --> Execute in main conversation. No agents.
 
-Does it benefit from isolation (large output, restricted tools)?
-  YES --> Single subagent, foreground or background.
+Does the task produce verbose output you do not want in your context?
+  YES --> Single subagent. Foreground or background.
 
-Do multiple work units need to run concurrently AND communicate laterally?
-  YES --> Agent team.
+Do multiple work units need to run concurrently?
+  YES --> Do they need to communicate or challenge each other during execution?
+            NO  --> Multiple parallel subagents. Subagent tier.
+            YES --> Do you have CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 and Opus 4.6?
+                      NO  --> Use subagents with explicit result passing between phases.
+                      YES --> Agent Teams tier.
 
-Do multiple work units need to run concurrently but only report results up?
-  YES --> Multiple subagents, possibly in parallel.
-
-Are tasks sequential with shared state?
+Are tasks sequential with significant shared state?
   YES --> Chain subagents or stay in main conversation.
 ```
 
----
+### When to Stay in Main Conversation
 
-## 2. The Decision Tree: Parallelize vs Sequential
+- Task requires frequent back-and-forth or iterative refinement.
+- Multiple phases share significant context and each phase builds heavily on the last.
+- Quick, targeted change to one or two files.
+- Latency matters: subagents start fresh and take time to gather context.
+- The work takes under ~30 seconds.
 
-### Execute in Main Conversation When
+### When to Use Subagents (Tier 1)
 
-- Task requires frequent back-and-forth or iterative refinement
-- Multiple phases share significant context (planning into implementation into testing, each phase using results from prior phases)
-- Quick, targeted change to one or two files
-- Latency matters: subagents start fresh, need time to gather context
-- The work is under ~30 seconds
+- Task produces verbose output you do not need in main context (test runs, log analysis, large data fetches).
+- You need to enforce specific tool restrictions (read-only research, no write access).
+- Work is self-contained and can return a compact summary.
+- Multiple independent investigation paths exist and workers do not need mid-work coordination.
+- Context protection is the primary goal.
 
-### Use a Single Subagent When
+### When to Use Agent Teams (Tier 2)
 
-- Task produces verbose output you do not need in main context (test runs, log analysis, large fetches)
-- You need to enforce specific tool restrictions (read-only research, no write access)
-- Work is self-contained and can return a summary
-- Context protection is the primary goal (keep exploration out of orchestrator's window)
-
-### Use Multiple Parallel Subagents When
-
-- Multiple independent investigation paths exist (research authentication module AND database module AND API module simultaneously)
-- Work units produce results that all return to the orchestrator for synthesis
-- Workers do not need to communicate with each other during execution
-- Tasks are genuinely independent: no shared file writes, no sequential dependencies
-
-### Use Agent Teams When
-
-- Workers need to challenge each other's findings (competing hypotheses debugging)
-- Workers need to share intermediate results and adjust based on what others find
-- Cross-domain work where each domain expert needs to respond to others' discoveries
-- Sustained parallelism that would overflow orchestrator's context window if results all returned there
+- Workers need to challenge each other's findings (competing hypotheses debugging).
+- Workers need to share intermediate results and adjust based on what others find before the work is done.
+- Cross-domain work where each specialist needs to respond to others' discoveries during execution, not just at synthesis.
+- Sustained parallelism across work that would exhaust subagent constraints if run sequentially.
+- You have the feature flag enabled and are running Opus 4.6.
 
 ### Never Parallelize When
 
-- Tasks write to the same files (race conditions, overwrites)
-- Task B depends on Task A's output
-- Sequential work with many interdependencies
-- Overhead exceeds benefit (3 trivial tasks do not need 3 agents)
+- Tasks write to the same files (race conditions, overwrites).
+- Task B depends on Task A's output and B cannot start until A completes.
+- Sequential dependency chain with many interdependencies.
+- Overhead exceeds benefit: three trivial tasks do not warrant three agents.
 
 ---
 
-## 3. Context Budget Management
+## 2. Team Lead Decision Model: Reassign vs Wait vs Spawn
 
-The orchestrator's own context window is a finite, precious resource. Every subagent result that returns to the orchestrator consumes that budget.
+Once a team is running, the team lead makes ongoing decisions about managing work in progress.
 
-Key mental model: **"Each subagent protects my context from its own verbose output."**
+### When to Wait
 
-Token budget arithmetic (approximate, Sonnet context windows):
-```
-Solo orchestrator:              ~200k tokens available
-+ 3 foreground subagents:       ~440k total (subagents return summaries, not raw output)
-+ 3 agent team members:         ~800k total (each teammate has full independent window)
-```
+Wait when:
+- A teammate is actively working and on track.
+- The task has a clear expected duration and it has not elapsed.
+- A teammate has sent a message indicating progress.
+- Blocking decisions require human input that has not yet been provided.
 
-Orchestrator context protection strategies:
+### When to Reassign
 
-**Route verbose operations to subagents**
-```text
-Bad: Run the test suite directly, parse 2000 lines of output
-Good: Spawn subagent to run tests, return only failing test names and error messages
-```
+Reassign (via TaskUpdate to change owner, or TaskCreate with a new task) when:
+- A teammate has been silent for significantly longer than the task should take.
+- A teammate has sent a message indicating they are stuck or blocked on external information.
+- The team lead realizes the task scope was misstated and needs reframing.
+- A teammate has marked a task complete but the output is insufficient.
 
-**Use Explore subagent for codebase discovery**
-The Explore subagent uses Haiku (fast, cheap) and keeps all search results in its own context. The orchestrator receives only the relevant findings, not every file it examined.
+To reassign in Agent Teams: use TaskUpdate to change the owner field, or send a message to the current owner asking them to stop and mark the task as available. Teammates cannot be forced to stop; they must cooperate.
 
-**Size return values carefully**
-When writing subagent prompts, specify the output format:
-```text
-"Return: a bulleted list of issues found, maximum 10 items, each with file path and one-sentence description. Do not include passing checks."
-```
-An unspecified return format will cause the subagent to return everything it found, which may overwhelm the orchestrator's context.
+### When to Spawn an Additional Teammate
 
-**Use agent teams for sustained parallelism**
-When multiple workers need to operate for extended periods and you do not want all their output returning to one context window, agent teams give each member an independent window. Findings are shared laterally between teammates, not funneled through the orchestrator.
+Spawn an additional teammate when:
+- An unexpected workstream has emerged that was not anticipated in the initial task list.
+- A remaining task is independent of all in-progress work and could run in parallel.
+- A teammate has been reassigned to a new task and their original task is now unclaimed.
+
+Use TeamCreate (already called) and then Task with team_name to spawn a new teammate mid-session. The existing team infrastructure is already in place.
 
 ---
 
-## 4. Why Subagents Are Better for Long Research
+## 3. Designing Task Dependencies
 
-Single-agent research on large codebases has a compounding problem: the more context the agent accumulates, the harder it is to focus on the current decision. Every file it read, every search result it examined, occupies context and competes for attention.
+The shared task list supports a DAG (directed acyclic graph) of dependencies. Getting the dependency design right determines whether teammates can self-claim work efficiently or spend time waiting.
 
-Subagents solve this through **context isolation**:
+### Dependency Design Principles
+
+**Block only what truly cannot start early.** If a task can begin with partial information and refine later, do not block it. Only add a dependency when starting without it would cause wasted work.
+
+**Parallelize the critical path where possible.** Map out the sequence: what is the minimum chain of tasks that must be sequential? Everything outside that chain can run in parallel. The team lead's goal is to minimize the length of the critical path.
+
+**Name tasks with their deliverable, not their action.** TaskCreate titles should describe what will exist when the task is done, not the process of doing it.
 
 ```
-Orchestrator problem:
-  Main context: task description + prior work + research results = getting full
-  Research adds more: every file read, every grep result, every inference
+BAD task title:  "Research pricing tools"
+GOOD task title: "pricing-research.md with feature comparison of 5 tools"
 
-Subagent solution:
-  Subagent context: spawn prompt + research results only
-  Orchestrator receives: summary (small) not raw output (large)
-  Orchestrator context: stays clean, focused on coordination
+BAD task title:  "Design the UI"
+GOOD task title: "ui-spec.md with component breakdown, input/output contract, responsive behavior"
 ```
 
-The Explore subagent in particular is optimized for this: Haiku model (fast, low cost), read-only tools, thoroughness levels (quick / medium / very thorough) that the orchestrator can tune to the task.
+Clear deliverables let teammates know when they are done. Vague titles lead to over-running tasks.
 
-Use Explore subagents for:
-- File discovery before deciding what to modify
-- Dependency mapping before planning refactors
-- Pattern identification before writing new code
-- Understanding unfamiliar codebases without polluting main conversation
+### Example DAG for a Four-Teammate Build
+
+```
+Task #1: "raw-pricing.json — pricing data for 5 LLM APIs"
+  Owner: scout
+  Blocks: Task #2, Task #4
+
+Task #2: "ui-spec.md — calculator UI with side-by-side comparison"
+  Owner: designer
+  BlockedBy: Task #1
+  Blocks: Task #3
+
+Task #3: "calculator.html — working HTML/CSS/JS calculator"
+  Owner: builder
+  BlockedBy: Task #2
+  Blocks: Task #4
+
+Task #4: "README.md and launch-copy.md — launch materials"
+  Owner: promoter
+  BlockedBy: Task #1, Task #3
+```
+
+Promoter is blocked by both scout (needs the pricing data) and builder (needs the final app). Designer is blocked only by scout. This is correct: designer can work independently of builder as long as it has the pricing research.
 
 ---
 
-## 5. How to Structure Prompts FOR Agent Consumption
+## 4. Prompting for Lateral Communication
 
-An agent receiving a prompt is not a human reading instructions. It processes the entire prompt as its initial context before taking any action. This means prompt structure affects agent behavior differently than it would for human readers.
+Teammates do not automatically message each other. Left to default behavior, they complete tasks and mark them done without notifying colleagues. Lateral messaging must be explicitly prompted.
+
+### Prompting Language That Works
+
+The following patterns reliably trigger SendMessage calls between teammates:
+
+```
+"When you finish your task, call SendMessage to [teammate-name] and tell them:
+ [exact content of the message to send]"
+
+"Do NOT wait for the team lead to relay your findings. Message [teammate-name]
+ directly when you have something they need."
+
+"Your trigger to begin work is a message from [teammate-name]. Wait for it.
+ When it arrives, read the file path they specify."
+
+"Coordinate with [teammate-name] directly. If your findings contradict theirs,
+ message them immediately. Do not buffer until task completion."
+
+"If you discover something that changes [teammate-name]'s requirements, stop
+ and message them before continuing."
+```
+
+### Prompting Language That Fails
+
+```
+BAD: "Work with the other teammates."
+  (Too vague. No action. Teammate does not know who, when, or how.)
+
+BAD: "Let the team know when you're done."
+  (Teammate may interpret this as returning a result to team lead only.)
+
+BAD: "Coordinate as needed."
+  (No trigger. No recipient. Teammate will not act.)
+```
+
+### Include the Messaging Format in Spawn Prompts
+
+Tell teammates the exact SendMessage syntax to use. Different implementations may use slightly different call signatures. Being explicit removes ambiguity:
+
+```
+To message another teammate directly:
+  Call SendMessage with:
+    type: "message"
+    recipient: "[teammate-name]"
+    content: "[your message text]"
+
+To message all teammates:
+  Call SendMessage with:
+    type: "broadcast"
+    content: "[your message text]"
+```
+
+### Designing for Lateral Messaging: The Handoff Pattern
+
+The most reliable pattern is to designate specific handoff points in each teammate's spawn prompt:
+
+```
+Scout's spawn prompt includes:
+  "When raw-pricing.json is written and verified complete, call SendMessage
+   to designer with: 'Pricing data ready at /tmp/project/raw-pricing.json.
+   Coverage: GPT-4, Claude Opus/Sonnet, Gemini Pro, Mistral Large.
+   Format: JSON array, each item has model_name, input_price, output_price,
+   context_window. Begin design phase.'"
+
+Designer's spawn prompt includes:
+  "Wait for a message from scout. When it arrives, read the file path in their
+   message. Design the UI. Then call SendMessage to builder with the spec
+   location and a one-paragraph summary of the interaction design."
+```
+
+This makes the handoff protocol explicit and reproducible. Do not leave it to teammates to decide when to communicate.
+
+---
+
+## 5. Context Briefing: Teammates Start from Zero
+
+Every teammate starts with a fresh context. They receive only what is in their spawn prompt. They do not see:
+- The team lead's conversation history.
+- What other teammates have done.
+- System context outside the spawn prompt and CLAUDE.md files.
+
+The single most common failure in Agent Teams is under-briefing. Teammates make wrong assumptions when context is sparse.
+
+### What to Include in Every Teammate Spawn Prompt
+
+```
+1. Their role and the team name.
+   "You are the designer teammate on team promptprice."
+
+2. The team's overall goal.
+   "The team is building a pricing calculator for LLM API costs."
+
+3. Who else is on the team and what they own.
+   "Teammates: scout (pricing research), builder (app implementation),
+   promoter (launch materials)."
+
+4. How to use the shared task list.
+   "Check TaskList to see available tasks. Call TaskUpdate to claim a task
+   before starting it. Update status as you progress. Mark complete when done."
+
+5. When and how to use lateral messaging.
+   "Message builder directly using SendMessage when your design spec is ready.
+   Do not route through team lead."
+
+6. Any prerequisite context they need immediately.
+   "Scout will message you with the path to pricing data. Wait for that message
+   before beginning design work."
+
+7. File paths and formats they will interact with.
+   "Read /tmp/promptprice/raw-pricing.json when received.
+   Write your output to /tmp/promptprice/ui-spec.md."
+```
+
+### The Context Briefing Principle
+
+If a teammate would need to ask the team lead a question to do their job, that question's answer belongs in the spawn prompt. Write spawn prompts assuming the teammate has no access to anyone except through the tools specified.
+
+---
+
+## 6. The Self-Claim Pattern
+
+In Agent Teams, teammates do not wait for the team lead to assign them work. They poll the shared task list and claim available (unblocked) tasks autonomously.
+
+### How Self-Claiming Works
+
+```
+Teammate turn starts
+  |
+  v
+Check TaskList for tasks that are:
+  - status: pending
+  - dependencies: all completed
+  - owner: unassigned (or available)
+  |
+  v
+If an appropriate task is found:
+  Call TaskUpdate to set owner = [my name], status = in_progress
+  (File-lock prevents two teammates from claiming the same task simultaneously)
+  |
+  v
+Execute the task
+  |
+  v
+Call TaskUpdate to set status = completed
+  |
+  v
+Check TaskList again for next available task
+  |
+  v
+If no tasks available: wait, or message team lead for guidance
+```
+
+### Designing for Self-Claiming
+
+To enable efficient self-claiming:
+- Create all tasks before spawning teammates, so they have a task list to query from the start.
+- Make task descriptions clear enough that any teammate can determine if the task is within their domain.
+- Assign initial owner in the task creation step for tasks with a designated executor. Leave owner empty for tasks that should be self-claimed by whoever finishes first.
+
+### The Race Condition That Does Not Happen
+
+Two teammates cannot claim the same task because TaskUpdate uses file-locking. If teammate A and teammate B both try to claim Task #3 at the same moment, one will succeed and the other will get an error response. The one that fails should immediately check TaskList and try a different available task.
+
+---
+
+## 7. Context Budget Management
+
+The team lead's context window is finite. Every result that returns to the team lead consumes that budget.
+
+### Subagent Context Budget (Shared)
+
+With subagents, all agents share the parent's 200K context window. The parent is protected from subagent verbose output only by the return format you specify. If a subagent returns 5,000 tokens of unstructured analysis, all 5,000 tokens enter the parent's context.
+
+Budget management strategies for subagents:
+
+```
+Route verbose operations to subagents
+  BAD:  Run the test suite in main session, parse 2,000 lines of output
+  GOOD: Spawn subagent to run tests, return only failing test names + error messages
+
+Use the Explore subagent for codebase discovery
+  Explore uses Haiku (fast, cheap) and keeps search results in its own context.
+  The orchestrator receives only findings, not every file examined.
+
+Specify compact return formats
+  BAD prompt ending:  "Report what you find."
+  GOOD prompt ending: "Return a JSON array of at most 10 issues.
+                       Each item: {file, line, issue, severity}.
+                       Do not include passing checks."
+```
+
+### Agent Teams Context Budget (Independent)
+
+With Agent Teams, each teammate has a fully independent 200K context window. The team lead's context is protected because teammates communicate with each other via SendMessage (which does not fill the team lead's window) and via the filesystem.
+
+The team lead's context grows primarily from:
+- The spawn prompts written for each teammate.
+- Messages received from teammates.
+- TaskList status checks.
+- Direct synthesis work done in the team lead's context.
+
+To protect team lead context in Agent Teams: direct heavy analysis to teammates, keep TeamLead's role to coordination and final synthesis.
+
+### Auto-Compaction
+
+Subagents compact independently at ~95% context capacity. Compaction events are logged to the subagent's transcript. The team lead's own session compacts at the same threshold. Both can be adjusted via `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`.
+
+---
+
+## 8. Subagents vs Agent Teams: The Decision in Practice
+
+Use this comparison when the tier choice is not obvious.
+
+| Factor | Favors Subagents | Favors Agent Teams |
+|--------|-----------------|-------------------|
+| Lateral communication needed | No | Yes |
+| Context per agent | Shared budget is sufficient | Each needs its own 200K |
+| Task coordination complexity | Orchestrator can manage | Shared DAG + self-claiming needed |
+| Cost tolerance | ~4x chat is preferred | ~7x chat is acceptable |
+| Feature flag availability | Not available | Available and enabled |
+| Duration of parallel work | Short to medium | Extended |
+| Number of handoffs between specialists | Few, simple | Many, complex |
+| Risk tolerance for experimental features | Low | Acceptable |
+
+### The Practical Test
+
+If you can describe the entire workflow as:
+1. Spawn agents in parallel.
+2. Collect all results when done.
+3. Synthesize.
+
+That is the subagent pattern. Use it.
+
+If any step requires:
+- Agent A pausing to incorporate Agent B's findings before continuing.
+- Agent A messaging Agent B directly without team lead involvement.
+- A dependency DAG where tasks auto-unblock based on completions.
+
+That requires Agent Teams. Check if you have the feature flag before proceeding.
+
+---
+
+## 9. How to Structure Prompts for Agent Consumption
+
+Agents process the prompt as their initial context before taking any action. Structure matters differently than for humans.
 
 ### Principles for AI-Targeted Prompts
 
-**1. State the output contract before the method**
+**State the output contract before the method.** Agents benefit from knowing the expected output format first because it shapes subsequent reasoning.
 
-Humans read linearly and want context before instructions. Agents benefit from knowing the expected output format first, because it shapes all subsequent reasoning.
+```
+Human-targeted:
+"Review the auth module. Start by reading the files, check for security issues,
+and give me your thoughts."
 
-```text
-Human-targeted prompt:
-"I need you to review this authentication module. Start by reading the files,
-then check for security issues, and give me your thoughts at the end."
-
-Agent-targeted prompt:
-"OUTPUT: A structured security report with three sections: Critical Issues,
-Warnings, Informational. Each item: severity, file path, line number, issue
-description, recommended fix.
-
-METHOD: Read src/auth/. Focus on: token handling, session management,
-input validation. Use Grep to find all token operations."
+Agent-targeted:
+"OUTPUT: JSON array, max 10 items, each: {severity, file, line, issue, fix}.
+METHOD: Read src/auth/ only. Focus on: token handling, session management,
+input validation."
 ```
 
-**2. Eliminate ambiguity about scope boundaries**
+**Eliminate ambiguity about scope boundaries.** Agents explore broadly if scope is unconstrained.
 
-Agents will explore broadly if scope is not constrained. Specify:
-- Which files or directories to touch
-- Which files or directories to NOT touch
-- Whether to make changes or report only
-
-```text
-Vague: "Check the database layer"
-Precise: "Read only: src/db/, src/models/. Do not modify any files.
-Report: connection pooling patterns, N+1 query risks, missing indexes."
+```
+VAGUE:  "Check the database layer"
+PRECISE: "Read only: src/db/, src/models/. Do not modify any files.
+         Report: connection pooling patterns, N+1 query risks."
 ```
 
-**3. Include necessary context in the prompt itself**
+**Include necessary context explicitly.** Agents do not inherit history. Information the orchestrator knows must be included in the spawn prompt.
 
-Subagents do not inherit orchestrator conversation history. Information the orchestrator knows must be explicitly included in the spawn prompt.
+```
+BAD:  "Fix the bug we discussed earlier in the authentication flow."
+      (Agent has no idea what bug was discussed)
 
-```text
-Missing context (bad):
-"Fix the bug we discussed earlier in the authentication flow."
-# Agent has no idea what bug was discussed
-
-Included context (good):
-"Fix: JWT tokens are not being invalidated on logout.
-Location: src/auth/session.js, function handleLogout().
-Expected behavior: On logout, add the JWT to a blacklist in Redis
-using the token expiry time as TTL.
-Redis client is available at src/db/redis.js."
+GOOD: "Fix: JWT tokens are not being invalidated on logout.
+      Location: src/auth/session.js, function handleLogout().
+      Expected: On logout, add the JWT to a Redis blacklist using token expiry as TTL.
+      Redis client: src/db/redis.js."
 ```
 
-**4. Specify the return format explicitly**
+**Give agents explicit stopping conditions.** Without one, agents may continue past the point of diminishing returns.
 
-```text
-No format specified:
-"Analyze the API performance and report findings."
-# Agent may return 2000 words of analysis
-
-Format specified:
-"Analyze API performance. Return: JSON object with keys:
-- slowest_endpoints: array of {path, avg_ms, p95_ms}, top 5 only
-- bottlenecks: array of {type, description, location}, max 10 items
-- recommendation: string, one sentence per item, max 5 items
-Do not include passing benchmarks."
 ```
-
-**5. Give agents explicit stopping conditions**
-
-Without a stopping condition, agents may continue working past the point of diminishing returns.
-
-```text
 "When you have identified 5 critical issues OR have reviewed all files in
 src/auth/, stop and return findings. Do not investigate other directories."
 ```
 
 ---
 
-## 6. Good vs Bad Agent Prompts
-
-### Example: Research Task
-
-**Bad agent prompt:**
-```text
-"Look at the codebase and figure out how authentication works, then
-check if there are any problems with it."
-```
-Problems:
-- No scope boundary (entire codebase? just auth?)
-- No output format specified
-- "Figure out how it works" is open-ended; agent may read hundreds of files
-- "Problems" is undefined; agent does not know what to look for
-
-**Good agent prompt:**
-```text
-"SCOPE: src/auth/ directory only. Read all files. Do not modify anything.
-
-TASK: Identify security vulnerabilities in the JWT authentication implementation.
-
-FOCUS AREAS:
-1. Token generation: check for weak secret keys, algorithm confusion attacks
-2. Token validation: check for missing expiry checks, signature bypass
-3. Session management: check for missing invalidation on logout
-4. Input handling: check for injection in username/password fields
-
-OUTPUT FORMAT (return exactly this structure):
-## Critical (exploitable without authentication)
-- [file:line] Issue description. Recommended fix.
-
-## High (requires authentication to exploit)
-- [file:line] Issue description. Recommended fix.
-
-## Informational
-- [file:line] Observation.
-
-STOP: After reviewing all files in src/auth/. Do not follow imports outside this directory."
-```
-
-### Example: Implementation Task
-
-**Bad agent prompt:**
-```text
-"Add caching to the API to make it faster."
-```
-Problems:
-- No specification of which endpoints
-- No specification of cache technology
-- No specification of TTL or invalidation strategy
-- No specification of what "done" looks like
-
-**Good agent prompt:**
-```text
-"TASK: Add Redis caching to the /api/users/:id endpoint.
-
-CONTEXT:
-- Redis client: src/db/redis.js, exported as `redisClient`
-- Target endpoint: src/routes/users.js, function getUserById()
-- Current behavior: every request hits the database
-- User data changes rarely (update on profile edit only)
-
-IMPLEMENTATION:
-1. Cache key: 'user:{id}'
-2. TTL: 3600 seconds (1 hour)
-3. Invalidate cache in updateUser() function (same file)
-4. Cache miss: fetch from DB, then cache result
-5. Handle Redis errors gracefully (fail open: serve from DB if cache unavailable)
-
-DO NOT:
-- Modify any other endpoints
-- Change the database schema
-- Add new dependencies (Redis client already available)
-
-DONE WHEN:
-- getUserById() reads from cache first, falls back to DB
-- updateUser() invalidates cache for that user ID
-- Existing tests pass
-- Add 2-3 tests for cache hit, cache miss, cache invalidation scenarios"
-```
-
----
-
-## 7. The Parallelization Decision in Practice
-
-### Pattern: Competing Hypotheses
-
-When root cause is unknown, sequential investigation suffers from anchoring: the first plausible theory explored biases all subsequent investigation.
-
-Parallel competing hypotheses fight this:
-
-```text
-Spawn 3 subagents simultaneously, each with a different theory:
-
-Subagent 1 prompt: "HYPOTHESIS: The connection timeout is caused by a misconfigured
-keep-alive setting. Check: nginx.conf, src/server.js, any HTTP client configuration.
-Report: evidence supporting or disproving this theory."
-
-Subagent 2 prompt: "HYPOTHESIS: The connection timeout is caused by database
-connection pool exhaustion. Check: src/db/, connection pool config, slow query logs.
-Report: evidence supporting or disproving this theory."
-
-Subagent 3 prompt: "HYPOTHESIS: The connection timeout is caused by a memory leak
-causing GC pauses. Check: heap usage patterns, any long-running operations,
-setTimeout/setInterval usage. Report: evidence supporting or disproving this theory."
-```
-
-The orchestrator receives three independent reports and synthesizes. The theory with the most evidence wins.
-
-### Pattern: Parallel Specialized Review
-
-Assign each agent a distinct non-overlapping lens:
-
-```text
-Subagent 1: "Review PR #142. Evaluate ONLY security implications.
-Ignore performance, style, test coverage. Report: security issues by severity."
-
-Subagent 2: "Review PR #142. Evaluate ONLY performance impact.
-Ignore security, style, test coverage. Report: performance regressions and improvements."
-
-Subagent 3: "Review PR #142. Evaluate ONLY test coverage.
-Ignore security, performance, style. Report: untested code paths, missing edge cases."
-```
-
-Result: thorough coverage of all three dimensions simultaneously, each reviewer staying focused.
-
-### Pattern: Independent Module Work
-
-When implementing a feature that spans multiple independent modules:
-
-```text
-Subagent 1 (owns: src/frontend/):
-"Implement the user profile UI component. Spec: [detailed spec].
-Do not touch any files outside src/frontend/."
-
-Subagent 2 (owns: src/api/):
-"Implement the user profile API endpoint. Spec: [detailed spec].
-Do not touch any files outside src/api/."
-
-Subagent 3 (owns: src/db/):
-"Implement the database schema changes and migrations. Spec: [detailed spec].
-Do not touch any files outside src/db/."
-```
-
-File ownership boundaries are enforced via the prompt, not by the system. The orchestrator must establish non-overlapping territories.
-
----
-
-## 8. Anti-Patterns to Avoid
-
-**Spawning agents for trivially small tasks**
-Agents have startup overhead. A task that takes 5 seconds in main conversation takes 15-20 seconds via subagent. Reserve agents for tasks where isolation value or parallelism benefit exceeds overhead.
-
-**Unspecified return formats**
-Without a specified format, agents return everything they found. A single subagent researching a large codebase can return 5000 tokens. Multiplied across 5 parallel agents, the orchestrator's context fills immediately.
-
-**Overlapping file territories**
-Two agents writing to the same file produces non-deterministic results. The last writer wins. Assign exclusive file ownership in each agent's prompt.
-
-**Spawning agents when tasks are sequential**
-Agent B needs Agent A's output. If you spawn both simultaneously, Agent B starts with incomplete information. Sequential dependency = sequential execution.
-
-**Over-broadcasting in agent teams**
-`broadcast` sends a message to every teammate. Each broadcast costs tokens proportional to team size. Use `message` (targeted) by default; reserve `broadcast` for genuinely global announcements.
-
-**Not pre-approving permissions for background agents**
-Background agents cannot interactively request permissions. Before backgrounding an agent, confirm which tools it will need. The system prompts for pre-approval at launch; answer comprehensively.
-
-**Neglecting context carryover in chained subagents**
-When chaining subagents (Agent A's output feeds Agent B), the orchestrator must explicitly include relevant findings in Agent B's spawn prompt. Agent B does not automatically see Agent A's work.
-
----
-
-## 9. The Recommended Workflow
+## 10. The Recommended Workflow
 
 ```
 1. PLAN FIRST (cheap)
-   Use plan mode or the Plan subagent to understand the codebase.
-   Cost: low (read-only, Haiku or read-only tools).
+   Use plan mode or the Explore subagent to understand the codebase.
+   Cost: low (read-only, Haiku model for Explore).
 
-2. DECOMPOSE
-   Break the plan into self-contained work units with clear outputs.
-   Identify dependencies. Draw the dependency graph.
+2. DECIDE TIER
+   Subagents or Agent Teams? Apply the decision model in Section 7.
+   If Agent Teams: verify feature flag is set and Opus 4.6 is running.
 
-3. SCOPE EACH TASK
-   For each work unit: specify files, tools, constraints, output format, stopping condition.
-   This is the spawn prompt.
+3. DESIGN THE TASK DAG (for Agent Teams)
+   Map all tasks with dependencies before spawning anyone.
+   Identify the critical path. Maximize work that can run in parallel.
 
-4. EXECUTE IN WAVES
-   Wave 1: all tasks with no dependencies (parallel).
-   Wave 2: tasks unblocked by Wave 1 completion (parallel within each wave).
-   Continue until all waves complete.
+4. WRITE SPAWN PROMPTS
+   For each agent or teammate: role, context, tools, deliverable, stopping condition,
+   output format, and (for teammates) lateral messaging instructions.
 
-5. SYNTHESIZE
-   Orchestrator reads all outputs from disk.
-   Produces final result in main context.
+5. EXECUTE IN WAVES (subagents) OR SELF-CLAIM (Agent Teams)
+   Subagents: issue Task calls for all parallel work simultaneously.
+   Agent Teams: create the task DAG, spawn teammates, let them self-claim.
+
+6. MONITOR AND INTERVENE
+   Watch for stalled agents. Reassign stuck tasks. Supply missing information.
+   For Agent Teams: use TaskList to track progress.
+
+7. SYNTHESIZE
+   Collect all outputs from disk or return values.
+   Produce final result in main context.
 ```
 
-This workflow minimizes expensive execution (teams, parallel agents) by investing in cheap planning first.
+This workflow minimizes expensive execution by investing in cheap planning first. The most common failure mode is skipping Steps 2 and 3 and discovering mid-execution that the wrong tier was chosen or the task graph was designed incorrectly.
 
 ---
 

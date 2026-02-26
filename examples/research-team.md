@@ -1,374 +1,265 @@
-# Research Team: 4 Parallel Agents Covering Different Angles
+# Research Team: 4 Specialists + Synthesizer + Devil's Advocate
 
-A complete research team for in-depth topic coverage. Four agents research different dimensions of a topic simultaneously. One synthesis agent (run sequentially after) integrates all findings.
+**AGENT TEAMS (requires flag)**
 
----
+This is a true Agent Teams example. It requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and Opus 4.6. The six teammates run as peers with independent context windows, a shared task list, and direct lateral messaging. The devil's advocate role can delay the team if it finds a fundamental flaw, which is the point.
 
-## Team Structure
-
-```
-Orchestrator
-    |
-    |-- Agent 1: Background & History (parallel)
-    |-- Agent 2: Current State & Statistics (parallel)
-    |-- Agent 3: Technical Deep-Dive (parallel)
-    |-- Agent 4: Criticism & Counterarguments (parallel)
-    |
-    v (after all 4 complete)
-    Agent 5: Synthesizer (sequential, receives all 4 outputs)
-    |
-    v
-    Final research report
-```
-
-**Why 4 parallel researchers:** A single agent researching all angles sequentially would fill its context with early searches before reaching later angles. Parallel agents each start fresh, giving full context budget to their assigned angle.
+This is not the subagent pattern. If you want the subagent equivalent (no flag, no lateral messaging), see the note at the bottom.
 
 ---
 
-## Setup: Define Shared Output Directory
+## The Team Prompt
 
-```bash
-mkdir -p /tmp/research-outputs/
-```
-
----
-
-## The Research Topic
-
-Adjust the [TOPIC] placeholder in each prompt below. Example topic: "Large Language Model (LLM) fine-tuning for enterprise applications"
-
----
-
-## Task Call: Agent 1 - Background and History
+Paste this into Claude Code (Opus 4.6, flag enabled). Replace `[TOPIC]` with your research subject:
 
 ```
-description: "Research agent 1 - background and history of LLM fine-tuning"
+Create an agent team to research [TOPIC] from multiple angles with built-in adversarial review.
 
-prompt: |
-  You are a Background Research agent.
+Spawn six teammates:
 
-  ## Your Job
-  Research the history, origins, and foundational concepts behind LLM (Large Language Model) fine-tuning for enterprise applications. Cover: how the field emerged, key milestones, foundational papers or companies that shaped it, how understanding has evolved.
+- "historian" to research the history, origins, and foundational concepts of [TOPIC]. Run at least 4 web searches. When complete, message synthesizer directly with all findings organized by chronological milestone. Do NOT write a summary — send the full raw findings.
 
-  ## Tools You May Use
-  WebSearch
+- "statistician" to gather current data, statistics, adoption numbers, market size, and quantitative information about [TOPIC]. Run at least 4 web searches focused on numbers and data. When complete, message synthesizer directly with all findings, flagging which statistics have the strongest sourcing.
 
-  ## Search Queries to Run
-  - "LLM fine-tuning history origins development"
-  - "enterprise LLM fine-tuning evolution milestones"
-  - "transfer learning fine-tuning NLP timeline"
+- "technologist" to research the technical mechanisms, methods, implementations, and emerging approaches in [TOPIC]. Run at least 4 web searches. When complete, message synthesizer directly with all findings organized by technical domain.
 
-  ## Output Requirements
-  Write your findings to: /tmp/research-outputs/agent1-background.json
+- "critic" to research known criticisms, failure cases, limitations, and counterarguments against [TOPIC]. Find the strongest skeptical perspectives from credible sources. Run at least 4 web searches. When complete, message synthesizer directly with findings organized by severity of criticism.
 
-  Return ONLY a JSON object:
-  {
-    "status": "complete",
-    "agent": "background-researcher",
-    "result": {
-      "output_file": "/tmp/research-outputs/agent1-background.json",
-      "key_milestones": [
-        {"year": "string", "milestone": "string", "significance": "string"}
-      ],
-      "founding_concepts": ["string", ...],
-      "key_contributors": ["string", ...],
-      "evolution_summary": "string"
-    }
-  }
-  Do not return markdown. Do not add explanation. Return the JSON only.
+- "synthesizer" to integrate all four research streams into a final report. Synthesizer is blocked until all four specialists complete and send their findings. If synthesizer needs clarification on any finding, message that specialist directly — do not leave gaps by guessing. When the report is complete, share it with me.
+
+- "debater" to challenge each specialist's findings. Debater runs in parallel with all four specialists. When historian sends findings to synthesizer, message historian directly with your strongest objection and require a response before those findings are considered settled. Do the same for statistician, technologist, and critic. If a challenge is resolved satisfactorily, mark it resolved and message synthesizer that the finding is cleared. If debater cannot refute a finding after two rounds of challenge, it is considered validated. Message me if you find a finding that appears fundamentally unreliable — this is a blocking condition.
+
+All four specialists start immediately and run in parallel. Debater challenges as findings arrive. Synthesizer starts only after all four specialists have completed and debater has cleared all findings. Tell me when the final report is ready.
 ```
 
 ---
 
-## Task Call: Agent 2 - Current State and Statistics
+## Expected Team Structure
 
+Shared task list at `~/.claude/tasks/research-team/`:
+
+**At launch:**
 ```
-description: "Research agent 2 - current state and statistics of LLM fine-tuning"
+Task #1: Historical research        [historian]      status: claimed
+Task #2: Statistical research       [statistician]   status: claimed
+Task #3: Technical research         [technologist]   status: claimed
+Task #4: Critical research          [critic]         status: claimed
+Task #5: Challenge all findings     [debater]        status: claimed (reactive)
+Task #6: Synthesize final report    [synthesizer]    status: blocked (by #1-5)
+```
 
-prompt: |
-  You are a Current State Research agent.
+**After all specialists complete:**
+```
+Task #1: Historical research        [historian]      status: complete
+Task #2: Statistical research       [statistician]   status: complete
+Task #3: Technical research         [technologist]   status: complete
+Task #4: Critical research          [critic]         status: complete
+Task #5: Challenge all findings     [debater]        status: in-progress
+Task #6: Synthesize final report    [synthesizer]    status: blocked (waiting for #5)
+```
 
-  ## Your Job
-  Research the current state of LLM fine-tuning for enterprise applications (2024-2025). Gather concrete statistics, adoption data, market size, leading tools and platforms, and who is using it.
-
-  ## Tools You May Use
-  WebSearch
-
-  ## Search Queries to Run
-  - "LLM fine-tuning enterprise adoption statistics 2025"
-  - "fine-tuning vs RAG enterprise 2024 2025"
-  - "LLM fine-tuning market size growth"
-  - "enterprise AI fine-tuning platforms tools 2025"
-
-  ## Output Requirements
-  Write your findings to: /tmp/research-outputs/agent2-current-state.json
-
-  Return ONLY a JSON object:
-  {
-    "status": "complete",
-    "agent": "current-state-researcher",
-    "result": {
-      "output_file": "/tmp/research-outputs/agent2-current-state.json",
-      "statistics": [
-        {"stat": "string", "source": "string or paraphrase", "year": "string"}
-      ],
-      "leading_tools": [
-        {"tool": "string", "company": "string", "position": "string"}
-      ],
-      "adoption_patterns": "string",
-      "market_size_estimate": "string",
-      "current_state_summary": "string"
-    }
-  }
-  Do not return markdown. Do not add explanation. Return the JSON only.
+**After debater clears all findings:**
+```
+Task #5: Challenge all findings     [debater]        status: complete
+Task #6: Synthesize final report    [synthesizer]    status: claimed
 ```
 
 ---
 
-## Task Call: Agent 3 - Technical Deep-Dive
+## How Lateral Messaging Flows in This Team
+
+### Specialists to synthesizer (primary data flow)
+
+Each specialist sends findings directly to synthesizer when their task is complete. This is the main data handoff. The team lead does not relay it.
+
+Example from historian's pane:
 
 ```
-description: "Research agent 3 - technical aspects of LLM fine-tuning"
+@synthesizer) Historian complete. Here are my findings on [TOPIC]:
 
-prompt: |
-  You are a Technical Research agent.
+Chronological milestones:
+- 1998: [milestone and significance]
+- 2004: [milestone and significance]
+- 2012: [milestone and significance]
+- 2019: [milestone and significance]
+- 2023: [milestone and significance]
 
-  ## Your Job
-  Research the technical aspects of LLM fine-tuning for enterprise applications. Cover: methods (full fine-tuning, LoRA, QLoRA, RLHF, etc.), compute requirements, data requirements, evaluation methods, and emerging technical approaches.
+Foundational concepts:
+- [concept]: [explanation]
+- [concept]: [explanation]
 
-  ## Tools You May Use
-  WebSearch
+Key contributors:
+- [name]: [contribution]
 
-  ## Search Queries to Run
-  - "LLM fine-tuning methods LoRA QLoRA RLHF comparison 2025"
-  - "enterprise LLM fine-tuning compute requirements costs"
-  - "LLM fine-tuning data quality requirements"
-  - "fine-tuning evaluation benchmarks methods"
+Sources used: [list of sources]
 
-  ## Output Requirements
-  Write your findings to: /tmp/research-outputs/agent3-technical.json
-
-  Return ONLY a JSON object:
-  {
-    "status": "complete",
-    "agent": "technical-researcher",
-    "result": {
-      "output_file": "/tmp/research-outputs/agent3-technical.json",
-      "methods": [
-        {
-          "method": "string",
-          "description": "string",
-          "compute_cost": "high|medium|low",
-          "data_requirement": "string",
-          "best_for": "string"
-        }
-      ],
-      "compute_requirements": "string",
-      "data_requirements": "string",
-      "evaluation_approaches": ["string", ...],
-      "emerging_approaches": ["string", ...],
-      "technical_summary": "string"
-    }
-  }
-  Do not return markdown. Do not add explanation. Return the JSON only.
+Task #1 marked complete. Debater may challenge before synthesizer uses this.
 ```
 
----
+### Debater to specialists (challenge loop)
 
-## Task Call: Agent 4 - Criticism and Counterarguments
+This is the mechanism that makes the team produce better-validated findings. When historian sends findings to synthesizer, debater intercepts the substance and challenges it.
+
+Debater's message to historian:
 
 ```
-description: "Research agent 4 - criticism and counterarguments for LLM fine-tuning"
+@historian) Challenge to your findings on [TOPIC]:
 
-prompt: |
-  You are a Critical Research agent.
+Your claim that [specific claim] appears to rely on [source]. This source has a known limitation: [limitation]. Can you find a second corroborating source? If not, this finding should be marked as preliminary.
 
-  ## Your Job
-  Research criticisms, limitations, failure cases, and counterarguments against LLM fine-tuning for enterprise applications. Find the cases where it fails, the alternatives that outperform it, and the skeptical perspectives from credible sources.
+Also: your timeline jumps from [year] to [year] without explaining [gap event]. Is that gap significant or genuinely uneventful?
 
-  ## Tools You May Use
-  WebSearch
-
-  ## Search Queries to Run
-  - "LLM fine-tuning limitations problems failure cases"
-  - "when not to fine-tune LLM alternatives better"
-  - "RAG better than fine-tuning enterprise"
-  - "LLM fine-tuning overfitting catastrophic forgetting"
-  - "cost of fine-tuning LLM not worth it"
-
-  ## Output Requirements
-  Write your findings to: /tmp/research-outputs/agent4-criticism.json
-
-  Return ONLY a JSON object:
-  {
-    "status": "complete",
-    "agent": "critical-researcher",
-    "result": {
-      "output_file": "/tmp/research-outputs/agent4-criticism.json",
-      "limitations": [
-        {"limitation": "string", "severity": "high|medium|low", "context": "string"}
-      ],
-      "failure_cases": [
-        {"scenario": "string", "what_goes_wrong": "string"}
-      ],
-      "alternatives": [
-        {"alternative": "string", "when_better": "string"}
-      ],
-      "skeptical_perspectives": ["string", ...],
-      "criticism_summary": "string"
-    }
-  }
-  Do not return markdown. Do not add explanation. Return the JSON only.
+Require: a response before I clear your findings to synthesizer.
 ```
 
----
+Historian's reply to debater:
 
-## Validation Step (After All 4 Agents Complete)
+```
+@debater) Responding to your challenges:
 
-```python
-import json
+On [specific claim]: found a second source. [source name and finding]. The claim holds.
 
-agents = [
-    ("background", background_result),
-    ("current-state", current_state_result),
-    ("technical", technical_result),
-    ("critical", critical_result)
-]
+On the timeline gap: I searched and found that [explanation]. The gap was genuinely uneventful for this topic. Adding a note in my findings.
 
-validated = {}
-failed = []
+Updated findings sent to synthesizer.
+```
 
-for name, result in agents:
-    try:
-        parsed = json.loads(result)
-        assert parsed.get("status") == "complete"
-        assert "result" in parsed
-        validated[name] = parsed["result"]
-        print(f"[OK] {name} agent validated")
-    except Exception as e:
-        failed.append(name)
-        print(f"[FAIL] {name} agent: {e}")
+Debater's clearance message to synthesizer:
 
-if failed:
-    print(f"FAILED AGENTS: {failed}. Re-run before proceeding.")
-    # Re-run failed agents with same prompts before continuing
+```
+@synthesizer) Historian's findings are cleared. Two challenges raised, both resolved satisfactorily. You can incorporate historian's data. One note: their [claim] is supported by two sources but both are from the same author — flag this as moderate-confidence.
+```
+
+### Synthesizer to specialists (clarification requests)
+
+When synthesizer is integrating findings and encounters a conflict or gap, it messages the relevant specialist directly:
+
+```
+@statistician) Your data shows adoption at 34% in the US, but @technologist's findings mention a 2024 paper citing 41%. These cannot both be correct for the same year. Which source is more recent and which has stronger methodology? I need to pick one for the report.
+```
+
+Statistician replies:
+
+```
+@synthesizer) The 34% figure is from Gartner Q3 2024, survey-based. The 41% figure technologist found is from a vendor-commissioned study with known selection bias. Use the Gartner figure. I will add a note to my findings marking the other as unreliable.
+```
+
+### Debater to team lead (blocking escalation)
+
+If debater finds a finding that cannot be validated and appears to undermine the research:
+
+```
+@team-lead) Escalating a blocking issue.
+
+Statistician's primary market size claim ($47B by 2027) traces back to a single PR Newswire release from a company in the space. I cannot find an independent source for this number. The claim is unverifiable and if included uncritically in the report, it could mislead your audience.
+
+Options:
+1. Mark the finding as unverifiable and exclude it from the report
+2. Have statistician re-research with different search terms to find an independent source
+3. Include it with a strong caveat
+
+Awaiting your decision before I clear statistician's findings to synthesizer.
 ```
 
 ---
 
-## Task Call: Agent 5 - Synthesizer (Run After All 4 Complete)
+## What the tmux Split-Pane View Looks Like
+
+Six active panes when the team is running:
 
 ```
-description: "Synthesizer agent - integrate all research into final report"
++-------------------+-------------------+-------------------+
+| PANE 1: lead      | PANE 2: historian  | PANE 3: statistician |
+|                   |                   |                   |
+| 6 teammates up.   | Searching...      | Searching...      |
+| Task list ready.  | Found milestone:  | Found stat: 34%   |
+| Watching...       | 1998 - [event]    | adoption Gartner  |
+|                   | ...               | ...               |
+|                   | @synthesizer)     | @synthesizer)     |
+|                   | Historian done.   | Statistician done |
+|                   | Findings: [data]  | Findings: [data]  |
++-------------------+-------------------+-------------------+
+| PANE 4: technologist | PANE 5: critic | PANE 6: debater   |
+|                   |                   |                   |
+| Searching...      | Searching...      | Waiting for       |
+| Found method:     | Found criticism:  | findings...       |
+| [LoRA technique]  | [failure case]    |                   |
+| ...               | ...               | @historian)       |
+|                   |                   | Challenge: your   |
+| @synthesizer)     | @synthesizer)     | claim about...    |
+| Technologist done | Critic done       |                   |
+| Findings: [data]  | Findings: [data]  | @synthesizer)     |
+|                   |                   | Historian cleared |
++-------------------+-------------------+-------------------+
+```
 
-prompt: |
-  You are a Synthesis agent.
+Synthesizer runs in the lead's pane (or a seventh pane if you have the screen space) after all five complete.
 
-  ## Your Job
-  Integrate four parallel research streams into a single coherent, well-structured research report on LLM fine-tuning for enterprise applications. Identify convergent findings, resolve contradictions, and produce a report that is more insightful than any single research stream alone.
+---
 
-  ## Input: Background Research
-  [INSERT validated["background"] as JSON]
+## The Devil's Advocate Role in Detail
 
-  ## Input: Current State Research
-  [INSERT validated["current-state"] as JSON]
+The debater role is the most important element of this team. Without it, the research team converges on whatever search results appear most authoritative — which is often whatever is most frequently cited, not whatever is most reliable.
 
-  ## Input: Technical Research
-  [INSERT validated["technical"] as JSON]
+Debater's job is specifically NOT to be contrarian for its own sake. The job is:
+- Challenge sourcing: is this claim well-supported?
+- Challenge completeness: is there an obvious angle the specialist missed?
+- Challenge framing: is the specialist interpreting data correctly?
+- Escalate genuinely unreliable findings to the team lead
 
-  ## Input: Critical Research
-  [INSERT validated["critical"] as JSON]
+What debater does NOT do:
+- Reject findings that survive challenge
+- Introduce its own research (debater challenges, does not research)
+- Challenge stylistic choices in how findings are written
+- Slow down the team unless it finds an actual problem
 
-  ## Synthesis Guidelines
-  - Identify 3-5 themes that appear across multiple research streams
-  - Note where researchers agree and where findings diverge
-  - Produce a "state of the field" assessment that integrates all angles
-  - End with a practical recommendation section
+The practical effect: synthesizer receives pre-validated findings. The report's claims are much more defensible because each one has survived at least one round of challenge.
 
-  ## Output Requirements
-  Return ONLY a JSON object:
-  {
-    "status": "complete",
-    "agent": "synthesizer",
-    "result": {
-      "report_title": "string",
-      "cross_stream_themes": [
-        {"theme": "string", "supported_by": ["background|current-state|technical|critical"], "finding": "string"}
-      ],
-      "field_assessment": "string",
-      "key_tensions": [
-        {"tension": "string", "perspectives": "string"}
-      ],
-      "practical_recommendations": [
-        {"recommendation": "string", "rationale": "string", "for_whom": "string"}
-      ],
-      "executive_summary": "string",
-      "confidence_level": "high|medium|low",
-      "gaps_identified": ["string", ...]
-    }
-  }
-  Do not return markdown. Do not add explanation. Return the JSON only.
+---
+
+## Configuring Debater for Different Standards
+
+The debater can be tuned in the team prompt:
+
+**Light challenge (fast, lower bar):**
+```
+"Debater: challenge each specialist once. If they respond with any supporting evidence, consider the finding cleared. Speed matters more than perfect validation."
+```
+
+**Standard challenge (balanced):**
+```
+"Debater: challenge each specialist once. Require a second source for any quantitative claim. Two rounds if the first response is insufficient."
+```
+
+**Strict challenge (slow, high confidence):**
+```
+"Debater: challenge each finding thoroughly. Require independent corroboration for every statistic. A finding is cleared only when debater is genuinely satisfied, not just when a response is provided. Err toward escalating to me rather than accepting weak sourcing."
 ```
 
 ---
 
-## Final Assembly
+## Adapting This for Different Topics
 
-```python
-import json
+Replace `[TOPIC]` throughout the team prompt. The four research angles (historical, statistical, technical, critical) work for almost any substantive research topic.
 
-synthesis = json.loads(synthesizer_result)["result"]
+You can rename the specialists to match your topic:
+- For a market research project: market-analyst, competitive-analyst, customer-analyst, risk-analyst
+- For a policy research project: historian, legal-analyst, economic-analyst, stakeholder-analyst
+- For a technical evaluation: architect, benchmarker, security-analyst, critic
 
-# Build the final report document
-sections = []
-
-sections.append(f"# {synthesis['report_title']}\n")
-sections.append(f"## Executive Summary\n{synthesis['executive_summary']}\n")
-
-sections.append("## Key Themes Across Research Streams\n")
-for theme in synthesis["cross_stream_themes"]:
-    sections.append(f"### {theme['theme']}")
-    sections.append(f"Supported by: {', '.join(theme['supported_by'])}")
-    sections.append(f"{theme['finding']}\n")
-
-sections.append(f"## Field Assessment\n{synthesis['field_assessment']}\n")
-
-sections.append("## Key Tensions\n")
-for tension in synthesis["key_tensions"]:
-    sections.append(f"**{tension['tension']}**")
-    sections.append(f"{tension['perspectives']}\n")
-
-sections.append("## Practical Recommendations\n")
-for i, rec in enumerate(synthesis["practical_recommendations"], 1):
-    sections.append(f"**{i}. {rec['recommendation']}**")
-    sections.append(f"For: {rec['for_whom']}")
-    sections.append(f"Rationale: {rec['rationale']}\n")
-
-sections.append(f"\n*Confidence level: {synthesis['confidence_level']}*")
-
-if synthesis.get("gaps_identified"):
-    sections.append("\n## Research Gaps")
-    for gap in synthesis["gaps_identified"]:
-        sections.append(f"- {gap}")
-
-final_report = "\n".join(sections)
-
-with open("/tmp/research-outputs/final-report.md", "w") as f:
-    f.write(final_report)
-
-print(f"Research complete. Report written to /tmp/research-outputs/final-report.md")
-print(f"Themes identified: {len(synthesis['cross_stream_themes'])}")
-print(f"Recommendations: {len(synthesis['practical_recommendations'])}")
-```
+Keep the synthesizer and debater roles. The combination of multi-angle parallel research plus adversarial review is the structural value of this team.
 
 ---
 
-## Adapting This Template
+## Subagent Equivalent (no flag needed)
 
-To use this template for a different topic:
-1. Replace "LLM fine-tuning for enterprise applications" with your topic in every prompt
-2. Update the search queries in each agent prompt to match your topic
-3. Adjust the output schema fields if your topic requires different data shapes
-4. Keep Agent 5 (synthesizer) largely the same - it works for any topic
+**SUBAGENTS (no flag needed)**
 
-The 4-angle structure (background / current state / technical / critical) applies to almost any research topic.
+If you cannot use the Agent Teams flag, approximate this with the Task tool:
+
+1. Spawn all four specialists as parallel subagents. Wait for all to complete.
+2. Validate outputs. Manually check for sourcing issues before passing to synthesis.
+3. Spawn the synthesizer as a subagent, passing all four outputs in the prompt.
+4. Optionally, spawn a "critic" subagent that receives the synthesized report and identifies weaknesses.
+
+The key limitation: you are the debater in this flow. You must manually review each output for sourcing and completeness before synthesis. This takes your attention and slows down the pipeline. The Agent Teams version runs the challenge loop autonomously while you watch.
