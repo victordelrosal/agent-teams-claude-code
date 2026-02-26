@@ -17,7 +17,7 @@ Create an agent team to research [TOPIC] from multiple angles with built-in adve
 
 Spawn six teammates:
 
-- "historian" to research the history, origins, and foundational concepts of [TOPIC]. Run at least 4 web searches. When complete, message synthesizer directly with all findings organized by chronological milestone. Do NOT write a summary — send the full raw findings.
+- "historian" to research the history, origins, and foundational concepts of [TOPIC]. Run at least 4 web searches. When complete, message synthesizer directly with all findings organized by chronological milestone. Do NOT write a summary: send the full raw findings.
 
 - "statistician" to gather current data, statistics, adoption numbers, market size, and quantitative information about [TOPIC]. Run at least 4 web searches focused on numbers and data. When complete, message synthesizer directly with all findings, flagging which statistics have the strongest sourcing.
 
@@ -25,9 +25,9 @@ Spawn six teammates:
 
 - "critic" to research known criticisms, failure cases, limitations, and counterarguments against [TOPIC]. Find the strongest skeptical perspectives from credible sources. Run at least 4 web searches. When complete, message synthesizer directly with findings organized by severity of criticism.
 
-- "synthesizer" to integrate all four research streams into a final report. Synthesizer is blocked until all four specialists complete and send their findings. If synthesizer needs clarification on any finding, message that specialist directly — do not leave gaps by guessing. When the report is complete, share it with me.
+- "synthesizer" to integrate all four research streams into a final report. Synthesizer is blocked until all four specialists complete and send their findings. If synthesizer needs clarification on any finding, message that specialist directly. Do not leave gaps by guessing. When the report is complete, share it with me.
 
-- "debater" to challenge each specialist's findings. Debater runs in parallel with all four specialists. When historian sends findings to synthesizer, message historian directly with your strongest objection and require a response before those findings are considered settled. Do the same for statistician, technologist, and critic. If a challenge is resolved satisfactorily, mark it resolved and message synthesizer that the finding is cleared. If debater cannot refute a finding after two rounds of challenge, it is considered validated. Message me if you find a finding that appears fundamentally unreliable — this is a blocking condition.
+- "debater" to challenge each specialist's findings. Debater runs in parallel with all four specialists. When historian sends findings to synthesizer, message historian directly with your strongest objection and require a response before those findings are considered settled. Do the same for statistician, technologist, and critic. If a challenge is resolved satisfactorily, mark it resolved and message synthesizer that the finding is cleared. If debater cannot refute a finding after two rounds of challenge, it is considered validated. Message me if you find a finding that appears fundamentally unreliable. That is a blocking condition.
 
 All four specialists start immediately and run in parallel. Debater challenges as findings arrive. Synthesizer starts only after all four specialists have completed and debater has cleared all findings. Tell me when the final report is ready.
 ```
@@ -127,7 +127,7 @@ Updated findings sent to synthesizer.
 Debater's clearance message to synthesizer:
 
 ```
-@synthesizer) Historian's findings are cleared. Two challenges raised, both resolved satisfactorily. You can incorporate historian's data. One note: their [claim] is supported by two sources but both are from the same author — flag this as moderate-confidence.
+@synthesizer) Historian's findings are cleared. Two challenges raised, both resolved satisfactorily. You can incorporate historian's data. One note: their [claim] is supported by two sources but both are from the same author. Flag this as moderate-confidence.
 ```
 
 ### Synthesizer to specialists (clarification requests)
@@ -199,7 +199,7 @@ Synthesizer runs in the lead's pane (or a seventh pane if you have the screen sp
 
 ## The Devil's Advocate Role in Detail
 
-The debater role is the most important element of this team. Without it, the research team converges on whatever search results appear most authoritative — which is often whatever is most frequently cited, not whatever is most reliable.
+The debater role is the most important element of this team. Without it, the research team converges on whatever search results appear most authoritative, which is often whatever is most frequently cited rather than whatever is most reliable.
 
 Debater's job is specifically NOT to be contrarian for its own sake. The job is:
 - Challenge sourcing: is this claim well-supported?

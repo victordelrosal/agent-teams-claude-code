@@ -172,7 +172,7 @@ If frontend encounters an ambiguity in the spec, it messages architect directly:
 Architect replies:
 
 ```
-@frontend) Use httpOnly cookies for access_token. I will add a Set-Cookie header to the login endpoint response in the spec. Backend will need to handle this too — I am messaging them now.
+@frontend) Use httpOnly cookies for access_token. I will add a Set-Cookie header to the login endpoint response in the spec. Backend will need to handle this too. I am messaging them now.
 ```
 
 ---
