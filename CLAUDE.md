@@ -4,18 +4,47 @@
 
 This repository is a complete operational reference for building multi-agent systems using Claude Code. It is written FOR AI INSTANCES, not humans. If you are a Claude Code instance reading this, you are the intended audience.
 
-This repo teaches you how to spawn, coordinate, and collect results from other Claude Code subagents using the Task tool. Every example here is executable. Every pattern is battle-tested.
-
 Read this file completely before touching anything else.
+
+---
+
+## Critical Distinction: Three Tiers of Multi-Agent Work
+
+Claude Code has THREE distinct tiers. Do not conflate them.
+
+| Tier | How Activated | Communication | Cost | Status |
+|------|---------------|---------------|------|--------|
+| **Subagents** | Task tool, always available | Parent-to-child only. No lateral. | ~4x chat | Stable |
+| **Agent Teams** | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` + TeamCreate | Peer-to-peer + shared task list | ~7x chat | Experimental |
+| **CLI Pipelines** | `claude -p` headless mode | Unix pipes between invocations | Per-call | Stable |
+
+**This repo covers all three tiers.** Most examples in `QUICKSTART.md` and `examples/` use the **subagent** pattern (Task tool). The true Agent Teams feature (lateral messaging, shared task list) is documented in `AGENT-TEAMS-VS-SUBAGENTS.md`.
+
+### Enable Agent Teams (required for the real feature)
+
+Add to `~/.claude/settings.json`:
+```json
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
+```
+
+Without this flag, the TeamCreate/TeamSpawn/TeamMessage tools are unavailable and teammates cannot communicate laterally.
+
+---
 
 ---
 
 ## Quick Start (Do This First)
 
-You have the Task tool available. Here is the minimum viable agent team:
+### Option A: Subagent pattern (Task tool, always available)
+
+Two parallel subagents, independent tasks, merged output. This is the orchestrator-worker pattern:
 
 ```
-Use the Task tool to spawn 2 parallel agents:
+Use the Task tool to spawn 2 parallel subagents:
 
 Agent 1:
   prompt: "Search the web for the top 3 benefits of async programming. Return ONLY a JSON array: [{benefit: string, explanation: string}]"
@@ -28,7 +57,22 @@ Agent 2:
 After both complete, merge results and produce a balanced analysis.
 ```
 
-That is an agent team. Two parallel agents, independent tasks, merged output. Scale from 2 to 10+ agents using the same pattern.
+Scale from 2 to 10+ subagents using the same pattern. Subagents report only to you — they cannot message each other.
+
+### Option B: True Agent Teams (lateral messaging, requires feature flag)
+
+For tasks where agents need to challenge each other, coordinate directly, or share a task list:
+
+```
+Create an agent team to investigate this performance bug.
+Spawn three teammates:
+- "profiler" to analyze hot paths in src/api/
+- "db-analyst" to look at query patterns in src/db/
+- "debater" to challenge the other two and look for overlooked causes.
+Coordinate findings and give me a diagnosis.
+```
+
+Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in settings. See `AGENT-TEAMS-VS-SUBAGENTS.md` for full setup and mechanics.
 
 ---
 

@@ -134,6 +134,7 @@ agent-teams-claude-code/
 │
 ├── Architecture & Concepts
 │   ├── ARCHITECTURE.md                ← Technical architecture, Task tool reference
+│   ├── AGENT-TEAMS-VS-SUBAGENTS.md    ← ⚠ Read this: three tiers explained precisely
 │   ├── HOW-AGENTS-THINK.md            ← Orchestrator decision model, context budgeting
 │   ├── PATTERNS.md                    ← 5 coordination patterns with ASCII diagrams
 │   ├── DECISION-TREE.md               ← When to use agent teams (deterministic tree)
