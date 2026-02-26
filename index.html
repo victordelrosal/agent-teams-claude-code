@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Teams for Claude Code</title>
+  <style>
+    :root {
+      --bg: #0d0d0d;
+      --bg2: #141414;
+      --bg3: #1a1a1a;
+      --border: #2a2a2a;
+      --accent: #d97706;
+      --accent2: #f59e0b;
+      --text: #e5e5e5;
+      --muted: #737373;
+      --code-bg: #111;
+      --green: #34d399;
+      --blue: #60a5fa;
+      --purple: #a78bfa;
+      --pink: #f472b6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* NAV */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: rgba(13,13,13,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+      z-index: 100;
+    }
+    .nav-brand { font-weight: 700; font-size: 0.95rem; color: var(--accent); letter-spacing: -0.01em; }
+    .nav-links { display: flex; gap: 2rem; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: 0.875rem; transition: color 0.15s; }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      background: var(--accent); color: #000; font-weight: 600; font-size: 0.8rem;
+      padding: 0.4rem 1rem; border-radius: 6px; text-decoration: none;
+      transition: background 0.15s;
+    }
+    .nav-cta:hover { background: var(--accent2); }
+
+    /* HERO */
+    .hero {
+      padding: 140px 2rem 80px;
+      max-width: 960px; margin: 0 auto;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: rgba(217,119,6,0.12); border: 1px solid rgba(217,119,6,0.3);
+      color: var(--accent2); font-size: 0.8rem; font-weight: 600;
+      padding: 0.3rem 0.8rem; border-radius: 99px; margin-bottom: 2rem;
+      letter-spacing: 0.03em; text-transform: uppercase;
+    }
+    .hero-badge::before { content: '●'; font-size: 0.5rem; color: var(--green); }
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+    }
+    h1 span { color: var(--accent); }
+    .hero-sub {
+      font-size: 1.15rem; color: var(--muted); max-width: 600px; margin: 0 auto 2.5rem;
+    }
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--accent); color: #000; font-weight: 700;
+      padding: 0.75rem 1.75rem; border-radius: 8px; text-decoration: none;
+      font-size: 0.95rem; transition: background 0.15s;
+    }
+    .btn-primary:hover { background: var(--accent2); }
+    .btn-secondary {
+      background: transparent; color: var(--text); font-weight: 600;
+      padding: 0.75rem 1.75rem; border-radius: 8px; text-decoration: none;
+      font-size: 0.95rem; border: 1px solid var(--border); transition: border-color 0.15s;
+    }
+    .btn-secondary:hover { border-color: var(--muted); }
+
+    /* META BANNER */
+    .meta-banner {
+      max-width: 960px; margin: 0 auto 5rem;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1rem 1.5rem;
+      display: flex; align-items: center; gap: 1rem;
+      font-size: 0.875rem;
+    }
+    .meta-banner .icon { font-size: 1.25rem; }
+    .meta-banner strong { color: var(--accent2); }
+    .meta-banner span { color: var(--muted); }
+
+    /* SECTION */
+    section { padding: 5rem 2rem; }
+    .container { max-width: 960px; margin: 0 auto; }
+    .section-label {
+      font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 0.75rem;
+    }
+    h2 {
+      font-size: clamp(1.6rem, 3vw, 2.4rem); font-weight: 800;
+      letter-spacing: -0.02em; margin-bottom: 1rem;
+    }
+    .section-sub { color: var(--muted); font-size: 1.05rem; max-width: 560px; margin-bottom: 3rem; }
+
+    /* ARCHITECTURE DIAGRAM */
+    .diagram-section { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .diagram-wrap {
+      background: var(--code-bg); border: 1px solid var(--border);
+      border-radius: 12px; padding: 2rem; overflow-x: auto;
+    }
+    pre {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.82rem; line-height: 1.7; color: #ccc;
+      white-space: pre;
+    }
+    .c-green { color: var(--green); }
+    .c-blue { color: var(--blue); }
+    .c-purple { color: var(--purple); }
+    .c-amber { color: var(--accent2); }
+    .c-pink { color: var(--pink); }
+    .c-muted { color: var(--muted); }
+
+    /* STATS */
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1px; background: var(--border);
+      border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+      margin-bottom: 5rem;
+    }
+    .stat {
+      background: var(--bg2); padding: 1.75rem 1.5rem; text-align: center;
+    }
+    .stat-num {
+      font-size: 2.4rem; font-weight: 800; letter-spacing: -0.03em;
+      color: var(--accent); line-height: 1;
+    }
+    .stat-label { font-size: 0.8rem; color: var(--muted); margin-top: 0.4rem; }
+
+    /* PRINCIPLES */
+    .principles-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem; margin-bottom: 4rem;
+    }
+    .principle-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem;
+      transition: border-color 0.15s;
+    }
+    .principle-card:hover { border-color: #3a3a3a; }
+    .principle-num {
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em;
+      color: var(--muted); margin-bottom: 0.75rem; text-transform: uppercase;
+    }
+    .principle-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .principle-card p { font-size: 0.875rem; color: var(--muted); line-height: 1.6; }
+
+    /* PATTERNS */
+    .patterns-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+    }
+    .pattern-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem;
+    }
+    .pattern-tag {
+      display: inline-block; font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 0.2rem 0.6rem; border-radius: 4px; margin-bottom: 0.75rem;
+    }
+    .tag-green { background: rgba(52,211,153,0.1); color: var(--green); }
+    .tag-blue { background: rgba(96,165,250,0.1); color: var(--blue); }
+    .tag-purple { background: rgba(167,139,250,0.1); color: var(--purple); }
+    .tag-amber { background: rgba(245,158,11,0.1); color: var(--accent2); }
+    .tag-pink { background: rgba(244,114,182,0.1); color: var(--pink); }
+    .pattern-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .pattern-card p { font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }
+    .pattern-example {
+      background: var(--code-bg); border-radius: 6px;
+      padding: 0.75rem; font-family: monospace; font-size: 0.75rem; color: #aaa;
+    }
+
+    /* FILES */
+    .files-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+    .file-group { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+    .file-group-label {
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 1rem;
+    }
+    .file-item { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.6rem; }
+    .file-item:last-child { margin-bottom: 0; }
+    .file-icon { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; flex-shrink: 0; }
+    .file-name { font-family: monospace; font-size: 0.8rem; color: var(--blue); }
+    .file-desc { font-size: 0.78rem; color: var(--muted); }
+
+    /* BUILT BY */
+    .built-by-section { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .agents-row {
+      display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 2rem;
+    }
+    .agent-chip {
+      display: flex; align-items: center; gap: 0.6rem;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 99px; padding: 0.5rem 1rem;
+    }
+    .agent-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .agent-chip span { font-size: 0.85rem; font-weight: 600; }
+    .agent-chip small { font-size: 0.75rem; color: var(--muted); }
+
+    /* FOOTER */
+    footer {
+      padding: 3rem 2rem;
+      text-align: center;
+      border-top: 1px solid var(--border);
+    }
+    footer p { color: var(--muted); font-size: 0.85rem; }
+    footer a { color: var(--accent); text-decoration: none; }
+
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .hero { padding: 120px 1.5rem 60px; }
+      .meta-banner { flex-direction: column; text-align: center; padding: 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">Agent Teams // Claude Code</div>
+  <div class="nav-links">
+    <a href="#architecture">Architecture</a>
+    <a href="#patterns">Patterns</a>
+    <a href="#files">Docs</a>
+    <a href="#built-by">Built By</a>
+  </div>
+  <a class="nav-cta" href="CLAUDE.md">Start Here (AI)</a>
+</nav>
+
+<div class="hero">
+  <div class="hero-badge">Field Manual v1.0</div>
+  <h1>Build Your <span>AI Workforce</span><br>with Agent Teams</h1>
+  <p class="hero-sub">
+    A complete operational reference for deploying multi-agent systems in Claude Code.
+    10 tasks in the time of 1. Fresh context on every problem. Specialists, not generalists.
+  </p>
+  <div class="hero-actions">
+    <a class="btn-primary" href="CLAUDE.md">If you're an AI, start here</a>
+    <a class="btn-secondary" href="README.md">README</a>
+    <a class="btn-secondary" href="QUICKSTART.md">Quickstart</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="meta-banner">
+    <div class="icon">🤖</div>
+    <div>
+      <strong>This repo was built by an agent team.</strong>
+      <span>5 parallel Claude Code agents (Researcher, Designer, Coder, Marketer, Manager) produced all 28 files simultaneously. The repo documents the exact technique used to create it.</span>
+    </div>
+  </div>
+</div>
+
+<section id="architecture" class="diagram-section">
+  <div class="container">
+    <div class="section-label">Architecture</div>
+    <h2>How Agent Teams Work</h2>
+    <p class="section-sub">One orchestrator. Multiple specialists. The filesystem coordinates everything.</p>
+
+    <div class="diagram-wrap">
+<pre>
+<span class="c-amber">ORCHESTRATOR</span>  (your primary Claude Code instance)
+       │
+       │  Task tool dispatch — all parallel, all independent
+       │
+       ├──► <span class="c-green">Researcher Agent</span>   <span class="c-muted">← fresh context, web search tools</span>
+       │         │ writes → <span class="c-muted">outputs/research.md</span>
+       │
+       ├──► <span class="c-blue">Analyst Agent</span>      <span class="c-muted">← fresh context, read/write tools</span>
+       │         │ writes → <span class="c-muted">outputs/analysis.md</span>
+       │
+       ├──► <span class="c-purple">Coder Agent</span>        <span class="c-muted">← fresh context, bash + edit tools</span>
+       │         │ writes → <span class="c-muted">outputs/implementation.py</span>
+       │
+       └──► <span class="c-pink">Reviewer Agent</span>     <span class="c-muted">← fresh context, read tools</span>
+                 │ writes → <span class="c-muted">outputs/review.md</span>
+                 │
+       ◄──────────────────── all agents complete ──────────────────────┘
+       │
+       ▼
+<span class="c-amber">ORCHESTRATOR</span>  reads all outputs → synthesizes → delivers final result
+</pre>
+    </div>
+
+    <div class="stats-grid" style="margin-top: 3rem; margin-bottom: 0;">
+      <div class="stat">
+        <div class="stat-num">10x</div>
+        <div class="stat-label">parallelization multiplier</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">0</div>
+        <div class="stat-label">shared runtime state between agents</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">5</div>
+        <div class="stat-label">coordination patterns documented</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">28</div>
+        <div class="stat-label">files in this repo</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="section-label">Core Principles</div>
+    <h2>5 Things Every AI Needs to Know</h2>
+    <p class="section-sub">Before you dispatch your first agent team, internalize these.</p>
+
+    <div class="principles-grid">
+      <div class="principle-card">
+        <div class="principle-num">01</div>
+        <h3>Fresh context is the point</h3>
+        <p>A subagent assigned to security review has zero knowledge of business context or architecture debates. That's good. It reads the code with genuinely fresh eyes. Independent perspective by design.</p>
+      </div>
+      <div class="principle-card">
+        <div class="principle-num">02</div>
+        <h3>Specialization beats generalization</h3>
+        <p>An agent given one job outperforms a general agent asked to "also handle" that job mid-task. Specialization in the system prompt shapes reasoning from the first token.</p>
+      </div>
+      <div class="principle-card">
+        <div class="principle-num">03</div>
+        <h3>Decomposition is the hard skill</h3>
+        <p>Good decomposition produces outputs that almost synthesize themselves. Poor decomposition produces confusion. The quality of your team depends almost entirely on how well you split the work.</p>
+      </div>
+      <div class="principle-card">
+        <div class="principle-num">04</div>
+        <h3>Orchestrators coordinate, not execute</h3>
+        <p>If your orchestrator is doing heavy analytical work, that's a design error. Orchestrators assign, collect, and synthesize. Subagents analyze, produce, and write. Keep roles separate.</p>
+      </div>
+      <div class="principle-card">
+        <div class="principle-num">05</div>
+        <h3>The filesystem is your message bus</h3>
+        <p>No orchestration framework needed. Agents write outputs to designated paths. Orchestrators read those paths. Simple, auditable, debuggable. This is the entire coordination infrastructure.</p>
+      </div>
+      <div class="principle-card">
+        <div class="principle-num">06</div>
+        <h3>Sequential is sometimes correct</h3>
+        <p>Security review can't start until code is written. The editor can't work until the first draft exists. Respect dependencies. A sequential pipeline of specialists still beats a solo generalist.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="patterns" style="background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="container">
+    <div class="section-label">Coordination Patterns</div>
+    <h2>5 Patterns. Every Team Fits One.</h2>
+    <p class="section-sub">Full documentation with ASCII diagrams and failure modes in PATTERNS.md.</p>
+
+    <div class="patterns-grid">
+      <div class="pattern-card">
+        <span class="pattern-tag tag-green">Pattern 1</span>
+        <h3>Orchestrator-Worker</h3>
+        <p>N identical workers handle N independent tasks. Orchestrator dispatches and collects. Best for homogeneous parallel work.</p>
+        <div class="pattern-example">Research 5 markets → 5 agents → merge</div>
+      </div>
+      <div class="pattern-card">
+        <span class="pattern-tag tag-blue">Pattern 2</span>
+        <h3>Pipeline</h3>
+        <p>Sequential specialists where each stage feeds the next. Use when tasks have genuine dependencies.</p>
+        <div class="pattern-example">Research → Outline → Write → Edit</div>
+      </div>
+      <div class="pattern-card">
+        <span class="pattern-tag tag-purple">Pattern 3</span>
+        <h3>Specialist Team</h3>
+        <p>Different expertise on the same artifact or problem space. Orchestrator routes inputs and synthesizes.</p>
+        <div class="pattern-example">Security + Perf + Style review same code</div>
+      </div>
+      <div class="pattern-card">
+        <span class="pattern-tag tag-amber">Pattern 4</span>
+        <h3>Recursive/Nested</h3>
+        <p>Agents spawn their own subagents for complex decomposition. Max depth 3. Use for very large tasks only.</p>
+        <div class="pattern-example">Manager → Team Leads → Workers</div>
+      </div>
+      <div class="pattern-card">
+        <span class="pattern-tag tag-pink">Pattern 5</span>
+        <h3>Review Loop</h3>
+        <p>Worker produces, reviewer evaluates, worker refines. Iterative until quality threshold met. Max iterations guard required.</p>
+        <div class="pattern-example">Writer → Critic → Writer → Critic...</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="files">
+  <div class="container">
+    <div class="section-label">Repository</div>
+    <h2>28 Files. Complete Coverage.</h2>
+    <p class="section-sub">Written for AI instances. Every document is structured for programmatic consumption.</p>
+
+    <div class="files-grid">
+      <div class="file-group">
+        <div class="file-group-label">Architecture & Concepts</div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="CLAUDE.md" style="color:inherit;text-decoration:none">CLAUDE.md</a></div><div class="file-desc">AI entry point — read this first</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="ARCHITECTURE.md" style="color:inherit;text-decoration:none">ARCHITECTURE.md</a></div><div class="file-desc">Task tool reference, context isolation, both primitives</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="HOW-AGENTS-THINK.md" style="color:inherit;text-decoration:none">HOW-AGENTS-THINK.md</a></div><div class="file-desc">Orchestrator decision model, token arithmetic</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="PATTERNS.md" style="color:inherit;text-decoration:none">PATTERNS.md</a></div><div class="file-desc">5 patterns with ASCII diagrams and failure modes</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="DECISION-TREE.md" style="color:inherit;text-decoration:none">DECISION-TREE.md</a></div><div class="file-desc">Deterministic tree: solo vs team vs which pattern</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="REPO-STRUCTURE.md" style="color:inherit;text-decoration:none">REPO-STRUCTURE.md</a></div><div class="file-desc">How to structure repos for AI consumption</div></div>
+        </div>
+      </div>
+
+      <div class="file-group">
+        <div class="file-group-label">Implementation</div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="QUICKSTART.md" style="color:inherit;text-decoration:none">QUICKSTART.md</a></div><div class="file-desc">3 complete working examples, runnable now</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="USE-CASES.md" style="color:inherit;text-decoration:none">USE-CASES.md</a></div><div class="file-desc">Use cases organized by pattern type</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="ANTI-PATTERNS.md" style="color:inherit;text-decoration:none">ANTI-PATTERNS.md</a></div><div class="file-desc">10 failure modes — read before you ship</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="COORDINATION-PROTOCOLS.md" style="color:inherit;text-decoration:none">COORDINATION-PROTOCOLS.md</a></div><div class="file-desc">File naming, handoffs, return contracts</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="CONSTRAINTS-AND-LIMITS.md" style="color:inherit;text-decoration:none">CONSTRAINTS-AND-LIMITS.md</a></div><div class="file-desc">Hard limits every AI must know before building</div></div>
+        </div>
+      </div>
+
+      <div class="file-group">
+        <div class="file-group-label">Operations</div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="DEBUGGING-AGENT-TEAMS.md" style="color:inherit;text-decoration:none">DEBUGGING-AGENT-TEAMS.md</a></div><div class="file-desc">8 failure modes, diagnosis steps, resolutions</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="SCALING.md" style="color:inherit;text-decoration:none">SCALING.md</a></div><div class="file-desc">2 agents to 20+, hierarchical teams</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="GLOSSARY.md" style="color:inherit;text-decoration:none">GLOSSARY.md</a></div><div class="file-desc">20 precisely defined terms</div></div>
+        </div>
+      </div>
+
+      <div class="file-group">
+        <div class="file-group-label">Examples (6 files)</div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="examples/basic-parallel.md" style="color:inherit;text-decoration:none">basic-parallel.md</a></div><div class="file-desc">Simplest 2-agent pattern</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="examples/research-team.md" style="color:inherit;text-decoration:none">research-team.md</a></div><div class="file-desc">4+1 agent parallel research</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="examples/dev-team.md" style="color:inherit;text-decoration:none">dev-team.md</a></div><div class="file-desc">Architect + frontend + backend + QA</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="examples/content-team.md" style="color:inherit;text-decoration:none">content-team.md</a></div><div class="file-desc">Research + outline + write + edit + SEO</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="examples/analysis-team.md" style="color:inherit;text-decoration:none">analysis-team.md</a></div><div class="file-desc">Data pipeline with parallel analysis</div></div>
+        </div>
+        <div class="file-item">
+          <span class="file-icon">▸</span>
+          <div><div class="file-name"><a href="examples/agent-prompt-templates.md" style="color:inherit;text-decoration:none">agent-prompt-templates.md</a></div><div class="file-desc">Copy-paste templates for 5 agent roles</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="built-by" class="built-by-section">
+  <div class="container">
+    <div class="section-label">Meta</div>
+    <h2>This Repo Was Built by an Agent Team</h2>
+    <p class="section-sub">
+      Five parallel Claude Code agents produced all 28 files simultaneously.
+      The repo you're reading is evidence of what agent teams can produce.
+    </p>
+
+    <div class="agents-row">
+      <div class="agent-chip">
+        <div class="agent-dot" style="background: var(--green);"></div>
+        <div>
+          <span>Researcher</span>
+          <br><small>ARCHITECTURE.md, HOW-AGENTS-THINK.md</small>
+        </div>
+      </div>
+      <div class="agent-chip">
+        <div class="agent-dot" style="background: var(--blue);"></div>
+        <div>
+          <span>Designer</span>
+          <br><small>PATTERNS.md, DECISION-TREE.md, REPO-STRUCTURE.md</small>
+        </div>
+      </div>
+      <div class="agent-chip">
+        <div class="agent-dot" style="background: var(--purple);"></div>
+        <div>
+          <span>Coder</span>
+          <br><small>CLAUDE.md, QUICKSTART.md, examples/</small>
+        </div>
+      </div>
+      <div class="agent-chip">
+        <div class="agent-dot" style="background: var(--pink);"></div>
+        <div>
+          <span>Marketer</span>
+          <br><small>README.md, USE-CASES.md, industry-use-cases/</small>
+        </div>
+      </div>
+      <div class="agent-chip">
+        <div class="agent-dot" style="background: var(--accent2);"></div>
+        <div>
+          <span>Manager</span>
+          <br><small>GLOSSARY.md, SCALING.md, DEBUGGING.md</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Built with Claude Code agent teams &middot;
+    <a href="CLAUDE.md">AI entry point</a> &middot;
+    <a href="README.md">README</a> &middot;
+    <a href="CONTRIBUTING.md">Contribute</a>
+  </p>
+  <p style="margin-top: 0.5rem;">If you're an AI reading this: go to <a href="CLAUDE.md">CLAUDE.md</a> — that file was written for you.</p>
+</footer>
+
+</body>
+</html>
